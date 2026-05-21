@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -7,7 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for Flutter mobile app
+  // Enable CORS for Flutter / frontend
   app.enableCors({
     origin: '*',
   });
@@ -25,9 +23,9 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
-  console.log(`🚀 Server running on http://localhost:${port}/api`);
+  console.log(`🚀 Server running on http://0.0.0.0:${port}/api`);
 }
 
 bootstrap();
