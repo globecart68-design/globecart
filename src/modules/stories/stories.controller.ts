@@ -48,8 +48,8 @@ export class StoriesController {
   // ─────────────────────────────────────────────
 
   @Get('feed')
-  getFeed(@CurrentUser() userId: string) {
-    return this.storiesService.getFeed(userId);
+  getFeed(@CurrentUser() user: any) {
+    return this.storiesService.getFeed(user.id);
   }
 
   // ─────────────────────────────────────────────
@@ -58,8 +58,8 @@ export class StoriesController {
   // ─────────────────────────────────────────────
 
   @Get('my')
-  getMyStories(@CurrentUser() userId: string) {
-    return this.storiesService.getMyStories(userId);
+  getMyStories(@CurrentUser() user: any) {
+    return this.storiesService.getMyStories(user.id);
   }
 
   // ─────────────────────────────────────────────

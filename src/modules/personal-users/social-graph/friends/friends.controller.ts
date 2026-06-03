@@ -20,29 +20,29 @@ export class FriendsController {
   constructor(private readonly friendsService: FriendsService) {}
 
   @Get()
-  getFriends(@CurrentUser() userId: string) {
-    return this.friendsService.getFriends(userId);
+  getFriends(@CurrentUser() user: any) {
+    return this.friendsService.getFriends(user.id);
   }
 
   @Get('requests/incoming')
   @UseGuards(GhostGuard)
-  getIncomingRequests(@CurrentUser() userId: string) {
-    return this.friendsService.getIncomingRequests(userId);
+  getIncomingRequests(@CurrentUser() user: any) {
+    return this.friendsService.getIncomingRequests(user.id);
   }
 
   @Get('requests/outgoing')
-  getOutgoingRequests(@CurrentUser() userId: string) {
-    return this.friendsService.getOutgoingRequests(userId);
+  getOutgoingRequests(@CurrentUser() user: any) {
+    return this.friendsService.getOutgoingRequests(user.id);
   }
 
   @Post('request/:targetUserId')
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   sendRequest(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.friendsService.sendRequest(userId, targetUserId);
+    return this.friendsService.sendRequest(user.id, targetUserId);
   }
 
   // ─── Cancel Outgoing Request ─────────────────────────────────────────────
@@ -50,39 +50,39 @@ export class FriendsController {
   @Delete('request/:targetUserId')
   @HttpCode(HttpStatus.OK)
   cancelRequest(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.friendsService.cancelRequest(userId, targetUserId);
+    return this.friendsService.cancelRequest(user.id, targetUserId);
   }
 
   @Post('accept/:requesterId')
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   acceptRequest(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('requesterId') requesterId: string,
   ) {
-    return this.friendsService.acceptRequest(userId, requesterId);
+    return this.friendsService.acceptRequest(user.id, requesterId);
   }
 
   @Post('reject/:requesterId')
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   rejectRequest(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('requesterId') requesterId: string,
   ) {
-    return this.friendsService.rejectRequest(userId, requesterId);
+    return this.friendsService.rejectRequest(user.id, requesterId);
   }
 
   @Delete(':targetUserId')
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   unfriend(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.friendsService.unfriend(userId, targetUserId);
+    return this.friendsService.unfriend(user.id, targetUserId);
   }
 }  // ← class closes here

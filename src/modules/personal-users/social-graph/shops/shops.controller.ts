@@ -24,10 +24,10 @@ export class ShopsController {
   @Post(':shopId/favorite')
   @HttpCode(HttpStatus.OK)
   favoriteShop(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('shopId') shopId: string,
   ) {
-    return this.shopsService.favoriteShop(userId, shopId);
+    return this.shopsService.favoriteShop(user.id, shopId);
   }
 
   /**
@@ -37,10 +37,10 @@ export class ShopsController {
   @Delete(':shopId/favorite')
   @HttpCode(HttpStatus.OK)
   unfavoriteShop(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('shopId') shopId: string,
   ) {
-    return this.shopsService.unfavoriteShop(userId, shopId);
+    return this.shopsService.unfavoriteShop(user.id, shopId);
   }
 
   /**
@@ -48,7 +48,7 @@ export class ShopsController {
    * List all shops favorited by the authenticated user.
    */
   @Get('favorites')
-  getFavoriteShops(@CurrentUser() userId: string) {
-    return this.shopsService.getFavoriteShops(userId);
+  getFavoriteShops(@CurrentUser() user: any) {
+    return this.shopsService.getFavoriteShops(user.id);
   }
 }

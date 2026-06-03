@@ -28,10 +28,10 @@ export class SocialController {
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   follow(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.socialService.follow(userId, targetUserId);
+    return this.socialService.follow(user.id, targetUserId);
   }
 
   // ─────────────────────────────────────────────
@@ -43,10 +43,10 @@ export class SocialController {
   @UseGuards(BlockGuard)
   @HttpCode(HttpStatus.OK)
   unfollow(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.socialService.unfollow(userId, targetUserId);
+    return this.socialService.unfollow(user.id, targetUserId);
   }
 
   // ─────────────────────────────────────────────
@@ -55,8 +55,8 @@ export class SocialController {
   // ─────────────────────────────────────────────
 
   @Get('suggestions')
-  getSuggestions(@CurrentUser() userId: string) {
-    return this.socialService.getSuggestedUsers(userId);
+  getSuggestions(@CurrentUser() user: any) {
+    return this.socialService.getSuggestedUsers(user.id);
   }
 
   // ─────────────────────────────────────────────
@@ -78,10 +78,10 @@ export class SocialController {
 
   @Get('status/:targetUserId')
   getFollowStatus(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: any,
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.socialService.getFollowStatus(userId, targetUserId);
+    return this.socialService.getFollowStatus(user.id, targetUserId);
   }
 
   // ─────────────────────────────────────────────
