@@ -92,7 +92,7 @@ export class ProfileController {
     }),
   )
   updateAvatar(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
@@ -103,7 +103,7 @@ export class ProfileController {
   }
 
   @Delete('me/avatar')
-  removeAvatar(@CurrentUser() userId: string) {
+  removeAvatar(@CurrentUser('id') userId: string) {
     return this.profiles.removeAvatar(userId);
   }
 }

@@ -181,6 +181,43 @@ export class StorageService implements OnModuleInit {
     this.logger.log(`Deleted file: ${key}`);
   }
 
+  // ── uploadBuffer  (used by PostsService) ─────────────────────────────────────
+
+   async uploadBuffer(
+     buffer: Buffer,
+     mimeType: string,
+     folder: string,
+   ): Promise<string> {
+     const ext = mimeType.split('/')[1].replace('quicktime', 'mov');
+     const key = `${folder}/${randomUUID()}.${ext}`;
+
+await this.client.send(
+       new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+         Body: buffer,
+         ContentType: mimeType,
+      }),
+     );
+
+    return this.cloudfrontUrl
+      ? `${this.cloudfrontUrl}/${key}`
+       : `https://${this.bucket}.s3.amazonaws.com/${key}`;
+  }
+//
+// ── deleteByUrl  (used by PostsService.delete) ───────────────────────────────
+
+  async deleteByUrl(url: string): Promise<void> {
+    // Extract key from CloudFront or S3 URL
+     const origin = this.cloudfrontUrl ?? `https://${this.bucket}.s3.amazonaws.com`;
+   const key = url.replace(`${origin}/`, '');
+
+     await this.client.send(
+       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+     );
+   }
+
+
   // ─────────────────────────────────────────────
   // Helpers
   // ─────────────────────────────────────────────

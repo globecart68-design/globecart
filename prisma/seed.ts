@@ -20,7 +20,7 @@ const prisma = new PrismaClient({ adapter });
 
 const ROLES = ["personal", "business", "driver", "delivery", "admin"];
 
-async function main() {
+async function seedRoles() {
   console.log("Seeding roles...");
 
   for (const name of ROLES) {
@@ -31,6 +31,44 @@ async function main() {
     });
     console.log(`✓ Role "${role.name}" (id: ${role.id})`);
   }
+}
+
+async function seedInventory() {
+  console.log("Seeding inventory for existing products...");
+
+  // Get all products that don't have inventory yet
+  const productsWithoutInventory = await prisma.product.findMany({
+    where: {
+      inventory: null,
+    },
+    select: {
+      id: true,
+      businessId: true,
+      stock: true,
+    },
+  });
+
+  for (const product of productsWithoutInventory) {
+    await prisma.inventory.create({
+      data: {
+        productId: product.id,
+        businessId: product.businessId,
+        currentStock: product.stock,
+        minStock: 0,
+        maxStock: 1000,
+      },
+    });
+    console.log(`✓ Inventory created for product ${product.id}`);
+  }
+
+  console.log(
+    `Seeded inventory for ${productsWithoutInventory.length} products.`,
+  );
+}
+
+async function main() {
+  await seedRoles();
+  await seedInventory();
 
   console.log("Seed complete.");
 }

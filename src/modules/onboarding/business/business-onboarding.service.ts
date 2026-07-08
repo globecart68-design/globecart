@@ -22,17 +22,75 @@ export class BusinessOnboardingService {
     private readonly roles: RolesService,
   ) {}
 
-  // ─── Register ──────────────────────────────────────────────────────────────
+  // ─── Auto-create default business (called after signup if initialRole = business) ───
 
   /**
-   * Creates a new Business row and grants the caller the `business` role.
-   * Business registration is self-serve (unlike driver/delivery which require
-   * admin approval), so the role is granted immediately.
-   *
-   * The user must then call POST /auth/switch-role { role: "business" } to get
-   * a token that reflects the new role.
+   * Creates a default Business record for new users who selected "business" role.
+   * Idempotent — safe to call multiple times.
+   */
+  async createDefault(userId: string) {
+    const existing = await this.prisma.business.findFirst({
+      where: { ownerId: userId },
+    });
+    if (existing) return existing;
+
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const defaultName = `My Shop · ${suffix}`;
+
+    const business = await this.prisma.business.create({
+      data: {
+        ownerId: userId,
+        name: defaultName,
+        businessType: 'other',
+        // isActive defaults to false — owner must publish manually
+      },
+    });
+
+    // Initialize default operating hours for all 7 days (9:00 AM - 6:00 PM)
+    const defaultHours = Array.from({ length: 7 }, (_, i) => ({
+      businessId: business.id,
+      dayOfWeek: i,
+      isOpen: true,
+      openTime: '09:00',
+      closeTime: '18:00',
+    }));
+
+    await this.prisma.operatingHours.createMany({
+      data: defaultHours,
+      skipDuplicates: true,
+    });
+
+    this.logger.log(`Auto-created default business "${defaultName}" for user ${userId}`);
+
+    return business;
+  }
+
+  // ─── Register Full Business ───────────────────────────────────────────────────
+
+  /**
+   * Full business registration (self-serve).
+   * The `business` role should already be granted via initialRole during signup.
+   * This method focuses only on creating/updating the business profile.
    */
   async register(userId: string, dto: RegisterBusinessDto) {
+    // Check if business already exists
+    const existing = await this.prisma.business.findFirst({
+      where: { ownerId: userId },
+    });
+
+    if (existing) {
+      // Update existing instead of creating duplicate
+      return this.prisma.business.update({
+        where: { id: existing.id },
+        data: {
+          name: dto.name,
+          businessType: dto.businessType,
+          description: dto.description,
+          location: dto.location,
+        },
+      });
+    }
+
     const business = await this.prisma.business.create({
       data: {
         ownerId: userId,
@@ -40,24 +98,29 @@ export class BusinessOnboardingService {
         businessType: dto.businessType,
         description: dto.description,
         location: dto.location,
-        // isActive defaults to false — owner must explicitly publish
       },
     });
 
-    // Grant role via RolesService (handles upsert + role-not-found gracefully).
-    try {
-      await this.roles.grantRole(userId, BUSINESS_ROLE);
-    } catch (err) {
-      this.logger.warn(
-        `Role "${BUSINESS_ROLE}" could not be granted to user ${userId}: ${err}. ` +
-          `Business created but role skipped — ensure the role is seeded.`,
-      );
-    }
+    // Initialize default operating hours for all 7 days (9:00 AM - 6:00 PM)
+    const defaultHours = Array.from({ length: 7 }, (_, i) => ({
+      businessId: business.id,
+      dayOfWeek: i,
+      isOpen: true,
+      openTime: '09:00',
+      closeTime: '18:00',
+    }));
+
+    await this.prisma.operatingHours.createMany({
+      data: defaultHours,
+      skipDuplicates: true,
+    });
+
+    this.logger.log(`Business registered for user ${userId}: ${dto.name}`);
 
     return business;
   }
 
-  // ─── Get my shops ──────────────────────────────────────────────────────────
+  // ─── Get My Businesses ────────────────────────────────────────────────────────
 
   getMyBusinesses(userId: string) {
     return this.prisma.business.findMany({
@@ -70,10 +133,11 @@ export class BusinessOnboardingService {
     return this.assertOwner(businessId, userId);
   }
 
-  // ─── Update ────────────────────────────────────────────────────────────────
+  // ─── Update ───────────────────────────────────────────────────────────────────
 
   async update(businessId: string, userId: string, dto: UpdateBusinessDto) {
     await this.assertOwner(businessId, userId);
+
     return this.prisma.business.update({
       where: { id: businessId },
       data: {
@@ -84,7 +148,7 @@ export class BusinessOnboardingService {
     });
   }
 
-  // ─── Upload logo ───────────────────────────────────────────────────────────
+  // ─── Upload Logo ──────────────────────────────────────────────────────────────
 
   async uploadLogo(businessId: string, userId: string, file: Express.Multer.File) {
     const business = await this.assertOwner(businessId, userId);
@@ -92,40 +156,52 @@ export class BusinessOnboardingService {
     if (business.profilePhoto) {
       await this.storage
         .deleteAvatar(business.profilePhoto)
-        .catch((err) => this.logger.warn(`Failed to delete old business logo: ${err.message}`));
+        .catch((err) => this.logger.warn(`Failed to delete old logo: ${err.message}`));
     }
 
     const profilePhoto = await this.storage.uploadAvatar(file);
-    return this.prisma.business.update({ where: { id: businessId }, data: { profilePhoto } });
+
+    return this.prisma.business.update({
+      where: { id: businessId },
+      data: { profilePhoto },
+    });
   }
 
-  // ─── Publish ───────────────────────────────────────────────────────────────
+  // ─── Publish / Unpublish ──────────────────────────────────────────────────────
 
   async publish(businessId: string, userId: string) {
     const business = await this.assertOwner(businessId, userId);
-    if (business.isActive) throw new ConflictException('This shop is already published.');
+    if (business.isActive) throw new ConflictException('Shop is already published.');
 
     const productCount = await this.prisma.product.count({ where: { businessId } });
     if (productCount === 0) {
-      throw new ConflictException('Add at least one product before publishing your shop.');
+      throw new ConflictException('Add at least one product before publishing.');
     }
 
-    return this.prisma.business.update({ where: { id: businessId }, data: { isActive: true } });
+    return this.prisma.business.update({
+      where: { id: businessId },
+      data: { isActive: true },
+    });
   }
-
-  // ─── Unpublish ─────────────────────────────────────────────────────────────
 
   async unpublish(businessId: string, userId: string) {
     await this.assertOwner(businessId, userId);
-    return this.prisma.business.update({ where: { id: businessId }, data: { isActive: false } });
+    return this.prisma.business.update({
+      where: { id: businessId },
+      data: { isActive: false },
+    });
   }
 
-  // ─── Ownership guard ───────────────────────────────────────────────────────
+  // ─── Ownership Guard ──────────────────────────────────────────────────────────
 
-  async assertOwner(businessId: string, userId: string) {
-    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+  private async assertOwner(businessId: string, userId: string) {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+    });
+
     if (!business) throw new NotFoundException('Business not found.');
     if (business.ownerId !== userId) throw new ForbiddenException('You do not own this business.');
+
     return business;
   }
 }

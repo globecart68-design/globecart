@@ -23,7 +23,7 @@ export class DeliveryOnboardingController {
 
   @Post('apply')
   apply(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: ApplyAsDeliveryDto,
   ) {
     return this.service.apply(userId, dto);
@@ -32,7 +32,7 @@ export class DeliveryOnboardingController {
   // ─── User: check own application status ──────────────────────────────────
 
   @Get('status')
-  getStatus(@CurrentUser() userId: string) {
+  getStatus(@CurrentUser('id') userId: string) {
     return this.service.getMyStatus(userId);
   }
 

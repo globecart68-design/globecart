@@ -20,4 +20,4 @@ export class ProfileDto {
   usernameChangeAvailableAt?: Date | null;
   handleChangeAvailableAt?: Date | null;
   avatarChangeAvailableAt?: Date | null;
-}
+}  

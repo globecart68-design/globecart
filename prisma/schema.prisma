@@ -4,13 +4,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────────────────────
-
 enum SocialProvider {
   google
   facebook
@@ -39,10 +37,16 @@ enum MessageType {
 }
 
 enum BusinessType {
-  restaurant
-  retail
-  service
-  logistics
+  grocery_food
+  restaurants_cafes
+  fashion
+  electronics
+  home_and_living
+  automotive
+  books_and_education
+  pets
+  sports_and_outdoor
+  health_and_beauty
   other
 }
 
@@ -103,57 +107,53 @@ enum ReportStatus {
 // ─────────────────────────────────────────────────────────────────────────────
 // Users & Auth
 // ─────────────────────────────────────────────────────────────────────────────
-
 model User {
-  id              String           @id @default(uuid())
-  email           String?          @unique
-  phone           String?          @unique
-  createdAt       DateTime         @default(now())
-
-  // Auth
-  providers       AuthProvider[]
-  sessions        Session[]
-  roles           UserRole[]
-
+  id             String         @id @default(uuid())
+  email          String?        @unique
+  phone          String?        @unique
+  createdAt      DateTime       @default(now())
+  // Auth & Role Management
+  providers      AuthProvider[]
+  sessions       Session[]
+  roles          UserRole[]
+  lastActiveRole String? // Remembers the user's last selected role across sessions
   // Profile
-  profile         UserProfile?
-  deviceTokens    DeviceToken[]
-  notifications   Notification[]
-
+  profile        UserProfile?
+  deviceTokens   DeviceToken[]
+  notifications  Notification[]
   // Social graph
-  following       Follow[]         @relation("follower")
-  followers       Follow[]         @relation("following")
-  friends         Friend[]         @relation("Friends1")
-  friendOf        Friend[]         @relation("Friends2")
-  streaks         Streak[]         @relation("Streaks1")
-  streakOf        Streak[]         @relation("Streaks2")
+  following      Follow[]       @relation("follower")
+  followers      Follow[]       @relation("following")
+  friends        Friend[]       @relation("Friends1")
+  friendOf       Friend[]       @relation("Friends2")
+  streaks        Streak[]       @relation("Streaks1")
+  streakOf       Streak[]       @relation("Streaks2")
 
   // Content
-  posts           Post[]
-  stories         Story[]
-  storyViews      StoryView[]
-  comments        Comment[]
-  likes           Like[]
-  shares          Share[]
-  savedPosts      SavedPost[]
-  sentMessages    Message[]        @relation("SentMessages")
-  receivedMessages Message[]       @relation("ReceivedMessages")
+  posts        Post[]
+  stories      Story[]
+  storyViews   StoryView[]
+  postLikes    PostLike[]
+  postComments PostComment[]
+  savedPosts   SavedPost[]
+  shares       Share[]
 
+  sentMessages     Message[]        @relation("SentMessages")
+  receivedMessages Message[]        @relation("ReceivedMessages")
   // Commerce
-  businesses      Business[]       @relation("UserBusinesses")
-  orders          Order[]
-  reviews         Review[]
-  favoriteShops   FavoriteShop[]
-
+  businesses       Business[]       @relation("UserBusinesses")
+  orders           Order[]
+  reviews          Review[]
+  favoriteShops    FavoriteShop[]
   // Logistics
-  driverProfile   DriverProfile?
-  deliveryProfile DeliveryProfile?
-  ridesAsCustomer Ride[]
-
+  driverProfile    DriverProfile?
+  deliveryProfile  DeliveryProfile?
+  ridesAsCustomer  Ride[]
   // Moderation
-  blocksGiven     Block[]          @relation("BlocksGiven")
-  blocksReceived  Block[]          @relation("BlocksReceived")
-  reportsFiled    Report[]         @relation("ReportsFiled")
+  blocksGiven      Block[]          @relation("BlocksGiven")
+  blocksReceived   Block[]          @relation("BlocksReceived")
+  reportsFiled     Report[]         @relation("ReportsFiled")
+  repost         Repost[]
 
   @@index([email])
   @@index([phone])
@@ -170,7 +170,6 @@ model UserProfile {
   lastHandleChange   DateTime?
   lastUsernameChange DateTime?
   lastAvatarChange   DateTime?
-
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([username])
@@ -210,7 +209,6 @@ model AuthProvider {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sessions
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Session {
   id        String   @id @default(uuid())
   userId    String?
@@ -227,7 +225,6 @@ model Session {
 // ─────────────────────────────────────────────────────────────────────────────
 // OTP Codes
 // ─────────────────────────────────────────────────────────────────────────────
-
 model OTPCode {
   id        String   @id @default(uuid())
   phone     String?
@@ -245,7 +242,6 @@ model OTPCode {
 // ─────────────────────────────────────────────────────────────────────────────
 // Social Graph
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Follow {
   followerId  String
   followingId String
@@ -274,15 +270,15 @@ model Friend {
 }
 
 model Streak {
-  id            String   @id @default(uuid())
-  userId        String
-  friendId      String
-  count         Int      @default(0)
+  id                String   @id @default(uuid())
+  userId            String
+  friendId          String
+  count             Int      @default(0)
   lastInteractionAt DateTime
-  userLastAt    DateTime // new — my last interaction timestamp
-  friendLastAt  DateTime // new — their last interaction timestamp
-  user          User     @relation("Streaks1", fields: [userId], references: [id], onDelete: Cascade)
-  friend        User     @relation("Streaks2", fields: [friendId], references: [id], onDelete: Cascade)
+  userLastAt        DateTime // new — my last interaction timestamp
+  friendLastAt      DateTime // new — their last interaction timestamp
+  user              User     @relation("Streaks1", fields: [userId], references: [id], onDelete: Cascade)
+  friend            User     @relation("Streaks2", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId])
   @@index([userId])
@@ -291,102 +287,148 @@ model Streak {
 // ─────────────────────────────────────────────────────────────────────────────
 // Social Content
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Post {
-  id         String      @id @default(uuid())
-  userId     String
-  type       PostType
-  contentUrl String?
-  caption    String?
-  createdAt  DateTime    @default(now())
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  comments   Comment[]
-  likes      Like[]
-  savedPosts SavedPost[]
-  shares     Share[]
+  id           String   @id @default(uuid())
+  userId       String
+  type         PostType
+  contentUrl   String?
+  mediaType    String
+  thumbnailUrl String?
+  caption      String?  @db.VarChar(2200)
+  audience     String   @default("everyone")
+  locationTag  String?
+
+  //counts
+  likesCount    Int @default(0)
+  commentsCount Int @default(0)
+  sharesCount   Int @default(0) // ← Added
+  savedCount    Int @default(0) // ← Added
+  repostCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  likes        PostLike[]
+  comments     PostComment[]
+  savedPosts   SavedPost[]
+  shares       Share[]
+  repost     Repost[] // ← New
+  repostFrom Repost[]     @relation("RepostOriginal")
 
   @@index([userId])
-  @@index([createdAt])
+  @@index([createdAt(sort: Desc)])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  body      String   @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
 }
 
 model Story {
-  id              String      @id @default(uuid())
+  id              String   @id @default(uuid())
   userId          String
-  contentUrl      String?     
-  textContent     String?     
-  backgroundColor String?    
-  mediaType       String       @default("image")  // 'image' | 'video' | 'text'
+  contentUrl      String?
+  textContent     String?
+  backgroundColor String?
+  mediaType       String   @default("image")
   expiresAt       DateTime
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  updatedAt       DateTime    @default(now()) @updatedAt
-
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  views           StoryView[] // new relation
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  views StoryView[]
 
   @@index([userId, expiresAt])
 }
 
-// NEW model — add after Story:
 model StoryView {
   id       String   @id @default(uuid())
   storyId  String
   viewerId String
   viewedAt DateTime @default(now())
-  story    Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  viewer   User     @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  story  Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewer User  @relation(fields: [viewerId], references: [id], onDelete: Cascade)
 
   @@unique([storyId, viewerId])
   @@index([storyId])
 }
 
-model Comment {
+// ─────────────────────────────────────────────────────────────────────────────
+// Share & SavedPost — Properly Related
+// ─────────────────────────────────────────────────────────────────────────────
+model Share {
   id        String   @id @default(uuid())
   userId    String
   postId    String
-  content   String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  @@index([postId])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
   @@index([userId])
-}
-
-model Like {
-  userId    String
-  postId    String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@id([userId, postId])
-}
-
-model Share {
-  userId    String
-  postId    String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@id([userId, postId])
+  @@index([postId])
 }
 
 model SavedPost {
+  id        String   @id @default(uuid())
   userId    String
   postId    String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  @@id([userId, postId])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+}
+
+model Repost {
+  id             String   @id @default(uuid())
+  userId         String
+  originalPostId String
+  caption        String?  @db.VarChar(1000)
+  createdAt      DateTime @default(now())
+
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalPost Post    @relation("RepostOriginal", fields: [originalPostId], references: [id], onDelete: Cascade)
+  post         Post?   @relation(fields: [postId], references: [id])
+  postId       String?
+
+  @@unique([userId, originalPostId])
+  @@index([userId])
+  @@index([originalPostId])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Messages
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Message {
   id         String      @id @default(uuid())
   senderId   String
@@ -405,52 +447,124 @@ model Message {
 // ─────────────────────────────────────────────────────────────────────────────
 // Businesses & Products
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Business {
-  id            String          @id @default(uuid())
-  ownerId       String
-  name          String
-  businessType  BusinessType
-  description   String?
-  location      String?
-  profilePhoto  String?
-  createdAt     DateTime        @default(now())
-
-  parentId      String?
-  parent        Business?       @relation("BusinessHierarchy", fields: [parentId], references: [id])
-  children      Business[]      @relation("BusinessHierarchy")
-
-  owner         User            @relation("UserBusinesses", fields: [ownerId], references: [id], onDelete: Cascade)
-  products      Product[]
-  orders        Order[]
-  reviews       Review[]
-  favoriteShops FavoriteShop[]
-  posts         BusinessPost[]
-  stories       BusinessStory[]
+  id             String           @id @default(uuid())
+  ownerId        String
+  name           String
+  businessType   BusinessType
+  description    String?
+  location       String?
+  profilePhoto   String?
+  logoPhoto      String?
+  createdAt      DateTime         @default(now())
+  parentId       String?
+  parent         Business?        @relation("BusinessHierarchy", fields: [parentId], references: [id])
+  children       Business[]       @relation("BusinessHierarchy")
+  owner          User             @relation("UserBusinesses", fields: [ownerId], references: [id], onDelete: Cascade)
+  products       Product[]
+  inventory      Inventory[]
+  orders         Order[]
+  reviews        Review[]
+  favoriteShops  FavoriteShop[]
+  posts          BusinessPost[]
+  stories        BusinessStory[]
+  operatingHours OperatingHours[]
+  isActive       Boolean          @default(false)
 
   @@index([ownerId])
   @@index([businessType])
   @@index([name])
   @@index([parentId])
+}
 
-  isActive  Boolean  @default(false)
+model OperatingHours {
+  id         String   @id @default(uuid())
+  businessId String
+  dayOfWeek  Int // 0 = Monday, 1 = Tuesday, ..., 6 = Sunday
+  isOpen     Boolean  @default(true)
+  openTime   String? // Format: "HH:MM" (24-hour)
+  closeTime  String? // Format: "HH:MM" (24-hour)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dayOfWeek])
+  @@index([businessId])
 }
 
 model Product {
-  id          String      @id @default(uuid())
-  businessId  String
-  name        String
-  category    String
-  price       Float
-  stock       Int         @default(0)
-  description String?
-  mediaUrl    String?
-  createdAt   DateTime    @default(now())
-  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  orderItems  OrderItem[]
+  id             String           @id @default(uuid())
+  businessId     String
+  name           String
+  category       String
+  price          Float
+  comparePrice   Float?
+  stock          Int              @default(0)
+  description    String?
+  sku            String?
+  imageUrl       String?
+  isActive       Boolean          @default(true)
+  trackInventory Boolean          @default(true)
+  taxable        Boolean          @default(true)
+  taxClass       String?
+  weight         Float?
+  length         Float?
+  width          Float?
+  height         Float?
+  shippingClass  String?
+  attributes     Json?
+  createdAt      DateTime         @default(now())
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orderItems     OrderItem[]
+  inventory      Inventory?
+  variants       ProductVariant[]
+  images         ProductImage[]
 
   @@index([businessId])
   @@index([category])
+}
+
+model ProductVariant {
+  id         String   @id @default(uuid())
+  productId  String
+  name       String
+  sku        String?
+  priceDelta Float    @default(0)
+  stock      Int      @default(0)
+  attributes Json?
+  createdAt  DateTime @default(now())
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Inventory {
+  id              String   @id @default(uuid())
+  productId       String   @unique
+  businessId      String
+  currentStock    Int      @default(0)
+  minStock        Int      @default(0)
+  maxStock        Int      @default(1000)
+  lastRestockedAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([productId])
 }
 
 model BusinessPost {
@@ -480,7 +594,6 @@ model BusinessStory {
 // ─────────────────────────────────────────────────────────────────────────────
 // Orders
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Order {
   id         String          @id @default(uuid())
   customerId String
@@ -513,7 +626,6 @@ model OrderItem {
 // ─────────────────────────────────────────────────────────────────────────────
 // Reviews
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Review {
   id        String   @id @default(uuid())
   userId    String
@@ -544,7 +656,6 @@ model FavoriteShop {
 // ─────────────────────────────────────────────────────────────────────────────
 // Driver & Delivery
 // ─────────────────────────────────────────────────────────────────────────────
-
 model DriverProfile {
   id            String           @id @default(uuid())
   userId        String           @unique
@@ -624,7 +735,6 @@ model DeliveryLocation {
 // ─────────────────────────────────────────────────────────────────────────────
 // Device Tokens
 // ─────────────────────────────────────────────────────────────────────────────
-
 model DeviceToken {
   id          String   @id @default(uuid())
   userId      String
@@ -632,7 +742,7 @@ model DeviceToken {
   platform    String
   endpointArn String?
   createdAt   DateTime @default(now())
- updatedAt DateTime @default(now()) @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -641,7 +751,6 @@ model DeviceToken {
 // ─────────────────────────────────────────────────────────────────────────────
 // Notifications
 // ─────────────────────────────────────────────────────────────────────────────
-
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -660,7 +769,6 @@ model Notification {
 // ─────────────────────────────────────────────────────────────────────────────
 // Moderation — Block & Report
 // ─────────────────────────────────────────────────────────────────────────────
-
 /// Global block between any two users, regardless of follow/friend status.
 /// Blocking auto-removes follow and friend rows (handled in BlocksService).
 model Block {
@@ -668,8 +776,7 @@ model Block {
   blockerId String
   blockedId String
   createdAt DateTime @default(now())
-
-  blocker   User     @relation("BlocksGiven",    fields: [blockerId], references: [id], onDelete: Cascade)
+  blocker   User     @relation("BlocksGiven", fields: [blockerId], references: [id], onDelete: Cascade)
   blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedId])
@@ -689,7 +796,6 @@ model Report {
   status     ReportStatus     @default(pending)
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
-
   reporter   User             @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@index([reporterId])

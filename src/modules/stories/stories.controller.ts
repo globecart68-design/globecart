@@ -76,7 +76,7 @@ export class StoriesController {
 
   @Get('presign')
   getPresignedUrl(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Query('filename') filename: string,
     @Query('mimeType') mimeType: string,
     @Query('fileSize') fileSize?: string,
@@ -120,7 +120,7 @@ export class StoriesController {
     }),
   )
   create(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateStoryDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
@@ -135,7 +135,7 @@ export class StoriesController {
   @Post(':id/view')
   @HttpCode(HttpStatus.OK)
   markViewed(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') storyId: string,
   ) {
     return this.storiesService.markViewed(storyId, userId);
@@ -149,7 +149,7 @@ export class StoriesController {
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   delete(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') storyId: string,
   ) {
     return this.storiesService.delete(storyId, userId);

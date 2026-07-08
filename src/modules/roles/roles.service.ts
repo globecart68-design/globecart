@@ -9,12 +9,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 /**
  * RolesService — manages the Role catalogue and UserRole assignments.
  *
- * Called by onboarding flows (driver, delivery, business) to grant a new role
- * after the user completes the relevant profile setup.
- *
- * Never exposes JWT signing — that lives in AuthService.  Role assignment here
- * only touches the DB; the client must call POST /auth/switch-role to get a
- * token that reflects the change.
+ * Supports the multi-role system where one user can have:
+ *   - user (personal)
+ *   - business
+ *   - delivery
+ *   - driver
+ *   - admin (future)
  */
 @Injectable()
 export class RolesService {
@@ -52,18 +52,33 @@ export class RolesService {
   }
 
   /**
-   * Grants a role to a user. Idempotent — safe to call even if already granted.
-   * Returns the full updated role list so callers can issue a new token if needed.
+   * Grants a role to a user. Idempotent and robust.
+   * - Creates the role if it doesn't exist (safe for first-time use)
+   * - Returns updated list of roles
    */
   async grantRole(userId: string, roleName: string): Promise<string[]> {
+    if (!roleName || typeof roleName !== 'string') {
+      throw new BadRequestException('Role name is required');
+    }
+
+    // Normalize role name (optional: you can map 'personal' → 'user' here if needed)
+    const normalizedRole = roleName === 'personal' ? 'user' : roleName;
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const role = await this.prisma.role.findUnique({ where: { name: roleName } });
-    if (!role) throw new NotFoundException(`Role "${roleName}" not found`);
+    // Ensure the role exists in the Role table
+    const role = await this.prisma.role.upsert({
+      where: { name: normalizedRole },
+      update: {},
+      create: { name: normalizedRole },
+    });
 
+    // Assign to user (idempotent)
     await this.prisma.userRole.upsert({
-      where: { userId_roleId: { userId, roleId: role.id } },
+      where: {
+        userId_roleId: { userId, roleId: role.id },
+      },
       update: {},
       create: { userId, roleId: role.id },
     });
@@ -73,16 +88,21 @@ export class RolesService {
 
   /**
    * Revokes a role from a user.
-   * Prevents revoking the "user" base role to keep accounts operable.
+   * Prevents revoking the base "user" role.
    */
   async revokeRole(userId: string, roleName: string): Promise<string[]> {
-    if (roleName === 'user') {
+    const normalizedRole = roleName === 'personal' ? 'user' : roleName;
+
+    if (normalizedRole === 'user') {
       throw new BadRequestException(
-        'The base "user" role cannot be revoked.',
+        'The base "user" (personal) role cannot be revoked.',
       );
     }
 
-    const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+    const role = await this.prisma.role.findUnique({
+      where: { name: normalizedRole },
+    });
+
     if (!role) throw new NotFoundException(`Role "${roleName}" not found`);
 
     await this.prisma.userRole.deleteMany({
@@ -90,5 +110,21 @@ export class RolesService {
     });
 
     return this.getUserRoles(userId);
+  }
+
+  /**
+   * Checks if user has a specific role
+   */
+  async hasRole(userId: string, roleName: string): Promise<boolean> {
+    const normalizedRole = roleName === 'personal' ? 'user' : roleName;
+
+    const count = await this.prisma.userRole.count({
+      where: {
+        userId,
+        role: { name: normalizedRole },
+      },
+    });
+
+    return count > 0;
   }
 }

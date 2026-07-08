@@ -14,6 +14,7 @@ import { EmailModule } from './utils/email/email.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ProfileModule } from '../personal-users/profile/profile.module';
 import { RolesModule } from '../roles/roles.module';
+import { BusinessOnboardingModule } from '../onboarding/business/business-onboarding.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RolesModule } from '../roles/roles.module';
     EmailModule,
     ProfileModule,
     RolesModule,          // ← role management
+    BusinessOnboardingModule,   // ← auto-create default shop on sign-up
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

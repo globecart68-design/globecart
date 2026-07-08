@@ -18,7 +18,7 @@ import {
 } from 'class-validator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser, ActiveRole } from '../../common/decorators/current-user.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
@@ -56,11 +56,40 @@ export class VerifyOtpDto {
 
   @IsIn(['signup', 'login'])
   flow!: 'signup' | 'login';
+
+  /** 
+   * Role selected during signup/onboarding flow.
+   * Only used when `flow === 'signup'` and `isNewUser === true`.
+   * Examples: "business", "driver", "delivery", "user"
+   */
+  @IsOptional()
+  @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
+  initialRole?: string;
 }
 
 export class SwitchRoleDto {
   @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
   role!: string;
+}
+
+export class SocialAuthDto {
+  @IsIn(['google', 'facebook', 'apple'])
+  provider!: 'google' | 'facebook' | 'apple';
+
+  @IsString()
+  token!: string;
+
+  @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  /** Role selected during social signup */
+  @IsOptional()
+  @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
+  initialRole?: string;
 }
 
 // ─── Controller ───────────────────────────────────────────────────────────────
@@ -89,6 +118,19 @@ export class AuthController {
       dto.code,
       dto.flow,
       sessionId,
+      dto.initialRole,           // ← Passed to support initial role on signup
+    );
+  }
+
+  // ── Social Auth ─────────────────────────────────────────────────────────────
+
+  @Post('social')
+  socialAuth(@Body() dto: SocialAuthDto) {
+    return this.auth.socialAuth(
+      dto.provider,
+      dto.token,
+      dto.sessionId,
+      dto.initialRole,           // ← Support initial role on social signup
     );
   }
 
@@ -98,12 +140,8 @@ export class AuthController {
    * POST /auth/switch-role
    * Body: { "role": "driver" }
    *
-   * Requires: Bearer token (any valid role)
-   *
    * Returns a new JWT with the requested role set as `activeRole`.
-   * The client must replace its stored token with the returned `accessToken`.
-   *
-   * 403 if the user does not hold the requested role.
+   * Client must replace its stored token.
    */
   @Post('switch-role')
   @UseGuards(JwtAuthGuard)
@@ -117,8 +155,7 @@ export class AuthController {
 
   /**
    * GET /auth/me
-   * Returns the current user identity and role information from the JWT.
-   * Useful for the client to bootstrap the role switcher UI.
+   * Returns current user + role info from JWT.
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
@@ -134,13 +171,11 @@ export class AuthController {
 
   /**
    * GET /auth/roles
-   * Returns the user's assigned roles from the database (always up-to-date).
-   * Use this when you suspect the token's role snapshot is stale.
+   * Returns up-to-date roles from database.
    */
   @Get('roles')
   @UseGuards(JwtAuthGuard)
   async getRoles(@CurrentUser() user: AuthenticatedUser) {
-    // re-use switchRole's role fetching logic by just exposing activeRole info
     return {
       activeRole: user.activeRole,
       roles: user.roles,

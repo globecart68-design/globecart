@@ -30,7 +30,7 @@ export class BusinessOnboardingController {
 
   @Post('register')
   register(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: RegisterBusinessDto,
   ) {
     return this.service.register(userId, dto);
@@ -39,7 +39,7 @@ export class BusinessOnboardingController {
   // ─── List my shops ────────────────────────────────────────────────────────
 
   @Get('my-businesses')
-  getMyBusinesses(@CurrentUser() userId: string) {
+  getMyBusinesses(@CurrentUser('id') userId: string) {
     return this.service.getMyBusinesses(userId);
   }
 
@@ -48,7 +48,7 @@ export class BusinessOnboardingController {
   @Get(':businessId')
   getMyBusiness(
     @Param('businessId') businessId: string,
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.service.getMyBusiness(businessId, userId);
   }
@@ -58,7 +58,7 @@ export class BusinessOnboardingController {
   @Patch(':businessId')
   update(
     @Param('businessId') businessId: string,
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateBusinessDto,
   ) {
     return this.service.update(businessId, userId, dto);
@@ -70,7 +70,7 @@ export class BusinessOnboardingController {
   @UseInterceptors(FileInterceptor('file'))
   uploadLogo(
     @Param('businessId') businessId: string,
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -89,7 +89,7 @@ export class BusinessOnboardingController {
   @Patch(':businessId/publish')
   publish(
     @Param('businessId') businessId: string,
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.service.publish(businessId, userId);
   }
@@ -99,7 +99,7 @@ export class BusinessOnboardingController {
   @Patch(':businessId/unpublish')
   unpublish(
     @Param('businessId') businessId: string,
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.service.unpublish(businessId, userId);
   }

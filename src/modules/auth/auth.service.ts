@@ -24,6 +24,8 @@ import {
   SocialTokenVerifierService,
   SocialProvider,
 } from './social-auth/social_token_verifier.service';
+import { RolesService } from '../roles/roles.service';
+import { BusinessOnboardingService } from '../onboarding/business/business-onboarding.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -33,7 +35,7 @@ type OtpChannel =
 
 type AuthFlow = 'signup' | 'login';
 
-/** The default role every new account starts with. */
+/** Default base role for every new account */
 const DEFAULT_ROLE = 'user';
 
 export type AuthResult = {
@@ -42,7 +44,7 @@ export type AuthResult = {
   isNewUser: boolean;
   /** Active role encoded in this token */
   activeRole: string;
-  /** All roles the user holds (used by the client to render the role switcher) */
+  /** All roles the user holds */
   roles: string[];
 };
 
@@ -71,6 +73,8 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly profiles: ProfileService,
     private readonly socialVerifier: SocialTokenVerifierService,
+    private readonly rolesService: RolesService, // ← Added
+    private readonly businessOnboarding: BusinessOnboardingService,
   ) {
     this.OTP_EXPIRY_MS = parseInt(
       this.config.get<string>('OTP_EXPIRY_MS', String(5 * 60 * 1000)),
@@ -121,6 +125,7 @@ export class AuthService {
     code: string,
     flow: AuthFlow,
     sessionId?: string,
+    initialRole?: string,        // ← NEW: Role selected during signup/onboarding
   ): Promise<AuthResult> {
     if (!AuthService.OTP_CODE_RE.test(code)) {
       throw new UnauthorizedException('Invalid or expired OTP');
@@ -165,7 +170,7 @@ export class AuthService {
       return this.resolveUser(tx, channel, flow);
     });
 
-    return this.finaliseAuth(user, isNewUser, sessionId);
+    return this.finaliseAuth(user, isNewUser, sessionId, initialRole);
   }
 
   // ─── Social Auth ─────────────────────────────────────────────────────────────
@@ -174,6 +179,7 @@ export class AuthService {
     provider: SocialProvider,
     token: string,
     sessionId?: string,
+    initialRole?: string,        // ← NEW
   ): Promise<AuthResult> {
     const socialProfile = await this.socialVerifier.verify(provider, token);
 
@@ -208,8 +214,9 @@ export class AuthService {
         return { user, isNewUser: false };
       }
 
-      const userData = socialProfile.email ? { email: socialProfile.email } : {};
-      const newUser = await tx.user.create({ data: userData });
+      const newUser = await tx.user.create({
+        data: socialProfile.email ? { email: socialProfile.email } : {},
+      });
 
       await tx.authProvider.create({
         data: {
@@ -224,23 +231,11 @@ export class AuthService {
       return { user: newUser, isNewUser: true };
     });
 
-    return this.finaliseAuth(user, isNewUser, sessionId);
+    return this.finaliseAuth(user, isNewUser, sessionId, initialRole);
   }
 
   // ─── Switch Role ──────────────────────────────────────────────────────────────
 
-  /**
-   * Issues a new JWT with a different `activeRole`.
-   *
-   * Rules:
-   * - The user must actually hold the requested role in the database.
-   * - The new token is identical to the old one except for `activeRole`.
-   * - The client should replace its stored token with the new one.
-   *
-   * Why issue a new token instead of a session flag?
-   * Keeping the role in the stateless JWT means every downstream service can
-   * enforce role-based access without an extra DB call or a shared cache.
-   */
   async switchRole(userId: string, requestedRole: string): Promise<SwitchRoleResult> {
     const userRoles = await this.prisma.userRole.findMany({
       where: { userId },
@@ -256,7 +251,18 @@ export class AuthService {
       );
     }
 
+    // Persist last used role
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastActiveRole: requestedRole },
+    });
+
     const { accessToken } = this.signToken(userId, requestedRole, roleNames);
+
+    // Auto-create a default Business record if switching into the business role
+    if (requestedRole === 'business') {
+      await this.businessOnboarding.createDefault(userId);
+    }
 
     this.logger.log(`User ${userId} switched active role to "${requestedRole}"`);
 
@@ -269,9 +275,19 @@ export class AuthService {
     user: User,
     isNewUser: boolean,
     sessionId?: string,
+    initialRole?: string,
   ): Promise<AuthResult> {
-    // Ensure the default "user" role exists in the database.
     await this.ensureDefaultRole(user.id, isNewUser);
+
+    // Grant the role the user chose during onboarding / role-selection.
+    // grantRole() is idempotent (upsert), so calling it for returning users
+    // who already hold the role is safe.  We must NOT guard this with
+    // `isNewUser` — a returning user who cleared app data and re-ran
+    // onboarding with a different role must have that role granted so the
+    // activation check below (`roleNames.includes(initialRole)`) passes.
+    if (initialRole && initialRole !== DEFAULT_ROLE) {
+      await this.rolesService.grantRole(user.id, initialRole);
+    }
 
     if (isNewUser) {
       try {
@@ -291,47 +307,73 @@ export class AuthService {
       await this.attachSession(user.id, sessionId);
     }
 
-    // Load the full role list so the token reflects the current assignment.
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { userId: user.id },
-      include: { role: true },
-    });
-    const roleNames = userRoles.map((ur) => ur.role.name);
+    // Load current roles
+    let roleNames = await this.rolesService.getUserRoles(user.id);
 
-    // New users always start as "user". Returning users keep their last active
-    // role (defaulting to "user" if somehow absent).
-    const activeRole = roleNames.includes(DEFAULT_ROLE) ? DEFAULT_ROLE : (roleNames[0] ?? DEFAULT_ROLE);
+    // Ensure at least default role
+    if (roleNames.length === 0) {
+      await this.ensureDefaultRole(user.id, true);
+      roleNames = await this.rolesService.getUserRoles(user.id);
+    }
+
+    // Determine active role.
+    //
+    // Priority:
+    //   1. initialRole — the role the user explicitly selected on this device
+    //      (onboarding or role-selection screen). Always honoured when the
+    //      client sends it and the user actually holds that role.
+    //   2. lastActiveRole (DB) — last role persisted for returning users.
+    //      Only used when initialRole is absent (e.g. a plain login with no
+    //      role selection step). Guarded by roleNames to avoid a stale DB
+    //      value from a previous session overriding a fresh selection.
+    //   3. DEFAULT_ROLE / first assigned role — final fallback.
+    const stored = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { lastActiveRole: true },
+    });
+
+    let activeRole: string;
+
+    if (initialRole && roleNames.includes(initialRole)) {
+      // Client explicitly chose a role — always honour it.
+      activeRole = initialRole;
+    } else if (stored?.lastActiveRole && roleNames.includes(stored.lastActiveRole)) {
+      // No explicit selection — restore the last known role for this user.
+      activeRole = stored.lastActiveRole;
+    } else {
+      // Fallback: default role or first assigned role.
+      activeRole = roleNames.includes(DEFAULT_ROLE) ? DEFAULT_ROLE : roleNames[0]!;
+    }
+
+    // Persist chosen active role
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastActiveRole: activeRole },
+    });
 
     const { accessToken } = this.signToken(user.id, activeRole, roleNames);
+
+    if (activeRole === 'business') {
+      await this.businessOnboarding.createDefault(user.id);
+    }
+
     const profile = await this.profiles.findByUserId(user.id);
 
-    return { accessToken, profile, isNewUser, activeRole, roles: roleNames };
+    return {
+      accessToken,
+      profile,
+      isNewUser,
+      activeRole,
+      roles: roleNames,
+    };
   }
 
   // ─── Role bootstrapping ───────────────────────────────────────────────────────
 
-  /**
-   * Guarantees the "user" role row exists globally, then assigns it to this
-   * user if they don't already have it. Idempotent — safe to call on every login.
-   */
   private async ensureDefaultRole(userId: string, isNewUser: boolean): Promise<void> {
-    // Only auto-assign on first login; existing accounts should not be changed.
     if (!isNewUser) return;
 
-    await this.prisma.$transaction(async (tx) => {
-      // Create the role if it doesn't exist yet (e.g. fresh DB).
-      const role = await tx.role.upsert({
-        where: { name: DEFAULT_ROLE },
-        update: {},
-        create: { name: DEFAULT_ROLE },
-      });
-
-      await tx.userRole.upsert({
-        where: { userId_roleId: { userId, roleId: role.id } },
-        update: {},
-        create: { userId, roleId: role.id },
-      });
-    });
+    await this.rolesService.grantRole(userId, DEFAULT_ROLE);
   }
 
   // ─── Internals ────────────────────────────────────────────────────────────────
@@ -408,27 +450,10 @@ export class AuthService {
 
   private async attachSession(userId: string, sessionId: string): Promise<void> {
     const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
-
-    if (!session) {
-      this.logger.warn(
-        `attachSession: session ${sessionId} not found — skipping`,
-      );
-      return;
-    }
+    if (!session) return;
 
     if (session.role) {
-      const role = await this.prisma.role.findUnique({ where: { name: session.role } });
-      if (role) {
-        await this.prisma.userRole.upsert({
-          where: { userId_roleId: { userId, roleId: role.id } },
-          update: {},
-          create: { userId, roleId: role.id },
-        });
-      } else {
-        this.logger.warn(
-          `attachSession: role "${session.role}" not found — skipping role assignment`,
-        );
-      }
+      await this.rolesService.grantRole(userId, session.role).catch(() => {});
     }
 
     await this.sessions.attachUser(sessionId, userId);

@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
 
 export type SocialProvider = 'google' | 'facebook' | 'apple';
 
@@ -20,4 +20,14 @@ export class SocialAuthDto {
   @IsString()
   @IsOptional()
   sessionId?: string;
+
+  /**
+   * Initial role selected by the user during signup/onboarding.
+   * Only used when creating a new account.
+   * Supported values: user, business, driver, delivery
+   */
+  @IsOptional()
+  @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
+  initialRole?: string;
 }

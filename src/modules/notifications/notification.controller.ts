@@ -31,7 +31,7 @@ export class NotificationController {
 
   @Get()
   getInbox(
-    @CurrentUser() userId: string,
+    @CurrentUser('id') userId: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
@@ -39,22 +39,22 @@ export class NotificationController {
   }
 
   @Patch(':id/read')
-  markRead(@CurrentUser() userId: string, @Param('id') id: string) {
+  markRead(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.notifications.markRead(userId, id);
   }
 
   @Patch('read-all')
-  markAllRead(@CurrentUser() userId: string) {
+  markAllRead(@CurrentUser('id') userId: string) {
     return this.notifications.markAllRead(userId);
   }
 
   @Post('device-token')
-  registerToken(@CurrentUser() userId: string, @Body() dto: RegisterTokenDto) {
+  registerToken(@CurrentUser('id') userId: string, @Body() dto: RegisterTokenDto) {
     return this.deviceTokens.register({ userId, ...dto });
   }
 
   @Delete('device-token/:token')
-  unregisterToken(@CurrentUser() userId: string, @Param('token') token: string) {
+  unregisterToken(@CurrentUser('id') userId: string, @Param('token') token: string) {
     return this.deviceTokens.unregister(userId, token);
   }
 }
