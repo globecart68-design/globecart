@@ -101,8 +101,19 @@ export class PostsController {
     @CurrentUser() user: any,
     @Query('cursor') cursor?: string,
     @Query('take') take?: string,
+    @Query('filter') filter?: string,
   ) {
-    return this.postsService.getFeed(user?.id, cursor, take ? parseInt(take) : 20);
+    const allowed = ['following', 'forYou', 'friends'] as const;
+    const resolvedFilter = allowed.includes(filter as any)
+      ? (filter as 'following' | 'forYou' | 'friends')
+      : 'forYou';
+
+    return this.postsService.getFeed(
+      user?.id,
+      cursor,
+      take ? parseInt(take) : 20,
+      resolvedFilter,
+    );
   }
 
   // ── GET /posts/user/:userId ───────────────────────────────────────────────

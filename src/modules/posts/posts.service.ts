@@ -15,7 +15,7 @@ import { promisify } from 'util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { PostType } from '@prisma/client';
+import { PostType, FriendStatus } from '@prisma/client';
 
 const execFileAsync = promisify(execFile);
 
@@ -193,12 +193,19 @@ async create(
   //
   // Pagination cursor is just the ISO timestamp of the last item returned.
 
-  async getFeed(viewerId?: string, cursor?: string, take = 20) {
+  async getFeed(
+    viewerId?: string,
+    cursor?: string,
+    take = 20,
+    filter: 'following' | 'forYou' | 'friends' = 'forYou',
+  ) {
   const cursorDate = cursor ? new Date(cursor) : null;
 
   if (!viewerId) {
-    // Guest feed — public posts only, no personalization, no reposts merge
-    // (reposts require a follow graph to be meaningful).
+    // Guests only ever get the public For You feed, no matter what `filter`
+    // the client sends — Following/Friends require a logged-in identity, and
+    // the app's video tab hides those tabs for guests anyway (defense in
+    // depth: this branch ignores `filter` entirely).
     const posts = await this.prisma.post.findMany({
       where: {
         audience: 'everyone',
@@ -220,13 +227,30 @@ async create(
     };
   }
 
-  const following = await this.prisma.follow.findMany({
-    where: { followerId: viewerId },
-    select: { followingId: true },
-  });
+  // ── Resolve which authors count for this tab ────────────────────────────
+  // null == no author restriction at all (For You: everyone's public posts).
+  let authorIds: string[] | null = null;
 
-  const followingIds = following.map((f) => f.followingId);
-  const authorIds = [viewerId, ...followingIds];
+  if (filter === 'following') {
+    const following = await this.prisma.follow.findMany({
+      where: { followerId: viewerId },
+      select: { followingId: true },
+    });
+    authorIds = [viewerId, ...following.map((f) => f.followingId)];
+  } else if (filter === 'friends') {
+    const friendRows = await this.prisma.friend.findMany({
+      where: {
+        OR: [{ userId: viewerId }, { friendId: viewerId }],
+        status: FriendStatus.accepted,
+      },
+      select: { userId: true, friendId: true },
+    });
+    const friendIds = friendRows.map((r) =>
+      r.userId === viewerId ? r.friendId : r.userId,
+    );
+    authorIds = [viewerId, ...friendIds];
+  }
+  // filter === 'forYou' → authorIds stays null (everyone, ranked/global feed)
 
   const reposterSelect = {
     id: true,
@@ -242,7 +266,7 @@ async create(
   // Original posts
   const posts = await this.prisma.post.findMany({
     where: {
-      userId: { in: authorIds },
+      ...(authorIds ? { userId: { in: authorIds } } : {}),
       audience: { not: 'only_me' },
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
     },
@@ -257,7 +281,7 @@ async create(
   // on their own feed, even though it shows up correctly for their followers.
   const reposts = await this.prisma.repost.findMany({
     where: {
-      userId: { in: authorIds },
+      ...(authorIds ? { userId: { in: authorIds } } : {}),
       originalPost: {
         audience: { not: 'only_me' },
       },
