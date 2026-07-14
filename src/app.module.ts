@@ -17,14 +17,14 @@ import { BusinessOnboardingModule } from './modules/onboarding/business/business
 import { DriverOnboardingModule } from './modules/onboarding/driver/driver-onboarding.module';
 import { DeliveryOnboardingModule } from './modules/onboarding/delivery/delivery-onboarding.module';
 
-// ---- Personal ----------------------------------------------------------------
+// ______________________________________________________________________________
 import { SocialModule } from './modules/personal-users/social-graph/social/social.module';
 import { ShopsModule } from './modules/personal-users/shops/shops.module';
 import { FriendsModule } from './modules/personal-users/social-graph/friends/friends.module';
 import { BlocksModule } from './modules/personal-users/social-graph/blocks/blocks.module';
 import { ProfileModule } from './modules/personal-users/profile/profile.module';
 
-// ─── Business dashboard ─────────────────────────────────────────────────────--
+// ─── Business dashboard ─────────────────────────────────────────────────────
 import { BusinessHomeModule } from './modules/business-user/home/business-home.module';
 import { BusinessProfileModule } from './modules/business-user/profile/business-profile.module';
 import { BusinessAnalyticsModule } from './modules/business-user/analytics/business-analytics.module';
@@ -37,7 +37,7 @@ import { BusinessInventoryModule } from './modules/business-user/inventory/busin
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
-
+    
     // Auth & sessions
     SessionsModule,
     AuthModule,

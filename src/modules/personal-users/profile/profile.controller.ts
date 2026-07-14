@@ -34,7 +34,7 @@ export class ProfileController {
 
   @Get('me')
   getMyProfile(@CurrentUser() user: any) {
-    console.log('Current user ID:', user.id);
+    
     return this.profiles.findByUserId(user.id);
   }
 

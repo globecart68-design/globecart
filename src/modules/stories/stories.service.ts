@@ -23,6 +23,8 @@ export class StoriesService {
   // ─────────────────────────────────────────────
 
   async getFeed(viewerId: string) {
+    console.log('viewerId =', viewerId);
+  console.log('typeof viewerId =', typeof viewerId);
     const now = new Date();
 
     const following = await this.prisma.follow.findMany({

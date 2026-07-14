@@ -176,18 +176,50 @@ async create(
 
   // ── GET /posts/feed  (paginated, newest first) ────────────────────────────
   //
-  // Merges two sources, newest-first, so a repost actually behaves like a
-  // TikTok repost instead of a silent bookmark:
-  //   1. Original posts authored by you or people you follow.
-  //   2. Posts *reshared* by people you follow (each one tagged with
-  //      `repostedBy` so the client can show a "Reposted by @x" badge).
+  // Two modes, depending on whether the caller is logged in:
   //
-  // Pagination cursor is just the ISO timestamp of the last item returned —
-  // both sources are filtered by `createdAt < cursor` and re-merged, which
-  // is correct because the top N of a union of two desc-sorted lists is
-  // always contained within the top N of each individual list.
+  //  • Logged-in (`viewerId` set) — personalized "following" feed. Merges
+  //    two sources, newest-first, so a repost actually behaves like a
+  //    TikTok repost instead of a silent bookmark:
+  //      1. Original posts authored by you or people you follow.
+  //      2. Posts *reshared* by people you follow (tagged with
+  //         `repostedBy` so the client can show a "Reposted by @x" badge).
+  //
+  //  • Guest (`viewerId` undefined) — public discovery feed. No follow
+  //    graph to work from, so this is just recent public ('everyone')
+  //    posts, newest-first, with all interaction flags forced false by
+  //    `_postSelect`. This is the TikTok-style "For You" feed a signed-out
+  //    user sees before ever creating an account.
+  //
+  // Pagination cursor is just the ISO timestamp of the last item returned.
 
-  async getFeed(viewerId: string, cursor?: string, take = 20) {
+  async getFeed(viewerId?: string, cursor?: string, take = 20) {
+  const cursorDate = cursor ? new Date(cursor) : null;
+
+  if (!viewerId) {
+    // Guest feed — public posts only, no personalization, no reposts merge
+    // (reposts require a follow graph to be meaningful).
+    const posts = await this.prisma.post.findMany({
+      where: {
+        audience: 'everyone',
+        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: take + 1,
+      select: this._postSelect(viewerId),
+    });
+
+    const hasNextPage = posts.length > take;
+    const page = hasNextPage ? posts.slice(0, take) : posts;
+
+    return {
+      items: page.map((p) => ({ ...p, repostedBy: null })),
+      nextCursor: hasNextPage
+        ? page[page.length - 1].createdAt.toISOString()
+        : null,
+    };
+  }
+
   const following = await this.prisma.follow.findMany({
     where: { followerId: viewerId },
     select: { followingId: true },
@@ -195,8 +227,6 @@ async create(
 
   const followingIds = following.map((f) => f.followingId);
   const authorIds = [viewerId, ...followingIds];
-
-  const cursorDate = cursor ? new Date(cursor) : null;
 
   const reposterSelect = {
     id: true,
@@ -304,8 +334,11 @@ async create(
   }
 
   // ── GET /posts/:id ────────────────────────────────────────────────────────
+  // viewerId is optional — guests (OptionalJwtAuthGuard) can open a single
+  // post with no token; _postSelect falls back to the sentinel filter so
+  // likedByMe/savedByMe/etc. just come back false.
 
-  async findOne(viewerId: string, postId: string) {
+  async findOne(viewerId: string | undefined, postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: this._postSelect(viewerId),
@@ -370,6 +403,7 @@ async create(
   }
 
   // ── GET /posts/:id/comments ───────────────────────────────────────────────
+  // Already viewer-agnostic — no auth required to read.
 
 async getComments(postId: string, cursor?: string, take = 30) {
   await this._assertPostExists(postId);
@@ -657,7 +691,15 @@ async addComment(userId: string, postId: string, body: string) {
     }
   }
 
-  private _postSelect(viewerId: string) {
+  // viewerId is optional so guest requests (no JWT) can still select posts —
+  // when it's undefined we filter the per-viewer relations (likes, shares,
+  // savedPosts, repost) on a sentinel id that can never match a real user,
+  // instead of `userId: undefined`. Prisma drops `undefined` keys from a
+  // `where` clause entirely, which would turn `{ userId: undefined }` into
+  // "no filter" — i.e. `likedByMe` would come back true for a guest the
+  // instant *anyone* had liked the post. The sentinel avoids that.
+  private _postSelect(viewerId?: string) {
+    const viewerFilter = { userId: viewerId ?? '__no_viewer__' };
     return {
       id: true,
       contentUrl: true,
@@ -686,24 +728,24 @@ async addComment(userId: string, postId: string, body: string) {
         },
       },
 
-      // Interaction status for current viewer
+      // Interaction status for current viewer (always empty for guests)
       likes: {
-        where: { userId: viewerId },
+        where: viewerFilter,
         select: { userId: true },
         take: 1,
       },
       shares: {
-        where: { userId: viewerId },
+        where: viewerFilter,
         select: { userId: true },
         take: 1,
       },
       savedPosts: {
-        where: { userId: viewerId },
+        where: viewerFilter,
         select: { userId: true },
         take: 1,
       },
       repost: {
-        where: { userId: viewerId },
+        where: viewerFilter,
         select: { userId: true },
         take: 1,
       },

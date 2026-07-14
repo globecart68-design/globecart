@@ -1,4 +1,15 @@
 // src/modules/posts/posts.controller.ts
+//
+// CHANGE: auth is no longer applied at the controller level. It's now
+// per-route:
+//   - Viewing (feed, single post, comments) uses OptionalJwtAuthGuard so
+//     guests can browse (TikTok-style) while logged-in users still get
+//     personalized likedByMe/savedByMe/iFollowThem flags.
+//   - Everything that mutates state (create, like, share, save, repost,
+//     comment write/delete, delete post) or reads private per-user data
+//     (getUserPosts is public-ish but still needs @CurrentUser for the
+//     "is this my own profile" check; getSavedPosts/getLikedPosts/getMyRepost
+//     are inherently private) keeps the hard JwtAuthGuard.
 
 import {
   Body,
@@ -19,6 +30,7 @@ import {
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PostsService } from './posts.service';
 
@@ -38,12 +50,12 @@ function fileFilter(
 }
 
 @Controller('posts')
-@UseGuards(JwtAuthGuard)
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   // ── POST /posts  — create post (multipart) ────────────────────────────────
   @Post()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor('files', 10, { storage: memoryStorage(), fileFilter }),
   )
@@ -80,17 +92,26 @@ export class PostsController {
   }
 
   // ── GET /posts/feed ───────────────────────────────────────────────────────
+  // Guest-viewable. With no/invalid token: public discovery feed, all
+  // interaction flags false. With a valid token: personalized following
+  // feed with real likedByMe/savedByMe/etc.
   @Get('feed')
+  @UseGuards(OptionalJwtAuthGuard)
   getFeed(
     @CurrentUser() user: any,
     @Query('cursor') cursor?: string,
     @Query('take') take?: string,
   ) {
-    return this.postsService.getFeed(user.id, cursor, take ? parseInt(take) : 20);
+    return this.postsService.getFeed(user?.id, cursor, take ? parseInt(take) : 20);
   }
 
   // ── GET /posts/user/:userId ───────────────────────────────────────────────
+  // Kept behind JwtAuthGuard: needs a real viewerId to correctly decide
+  // whether the caller is viewing their own profile (which unlocks
+  // 'only_me' posts). A guest just sees the same as any non-owner viewer,
+  // so there's no real loss in still requiring login here for now.
   @Get('user/:userId')
+  @UseGuards(JwtAuthGuard)
   getUserPosts(
     @CurrentUser() user: any,
     @Param('userId') userId: string,
@@ -107,6 +128,7 @@ export class PostsController {
 
   // ── GET /posts/saved ──────────────────────────────────────────────────────
   @Get('saved')
+  @UseGuards(JwtAuthGuard)
   getSavedPosts(
     @CurrentUser() user: any,
     @Query('cursor') cursor?: string,
@@ -121,6 +143,7 @@ export class PostsController {
 
   // ── GET /posts/liked ───────────────────────────────────────────────────────
   @Get('liked')
+  @UseGuards(JwtAuthGuard)
   getLikedPosts(
     @CurrentUser() user: any,
     @Query('cursor') cursor?: string,
@@ -135,6 +158,7 @@ export class PostsController {
 
   // ── GET /posts/my-repost ─────────────────────────────────────────────────
   @Get('my-repost')
+  @UseGuards(JwtAuthGuard)
   getMyRepost(
     @CurrentUser() user: any,
     @Query('cursor') cursor?: string,
@@ -148,13 +172,17 @@ export class PostsController {
   }
 
   // ── GET /posts/:id ────────────────────────────────────────────────────────
+  // Guest-viewable — opening a single post (e.g. from a share link) shouldn't
+  // require login either.
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   findOne(@CurrentUser() user: any, @Param('id') id: string) {
-    return this.postsService.findOne(user.id, id);
+    return this.postsService.findOne(user?.id, id);
   }
 
   // ── DELETE /posts/:id ─────────────────────────────────────────────────────
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   delete(@CurrentUser() user: any, @Param('id') id: string) {
     return this.postsService.delete(user.id, id);
@@ -162,6 +190,7 @@ export class PostsController {
 
   // ── POST /posts/:id/like ──────────────────────────────────────────────────
   @Post(':id/like')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   like(@CurrentUser() user: any, @Param('id') id: string) {
     return this.postsService.like(user.id, id);
@@ -169,6 +198,7 @@ export class PostsController {
 
   // ── POST /posts/:id/share ─────────────────────────────────────────────────
   @Post(':id/share')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   share(@CurrentUser() user: any, @Param('id') id: string) {
     return this.postsService.share(user.id, id);
@@ -176,6 +206,7 @@ export class PostsController {
 
   // ── POST /posts/:id/save ──────────────────────────────────────────────────
   @Post(':id/save')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   save(@CurrentUser() user: any, @Param('id') id: string) {
     return this.postsService.save(user.id, id);
@@ -183,6 +214,7 @@ export class PostsController {
 
   // ── POST /posts/:id/repost ───────────────────────────────────────────────
   @Post(':id/repost')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   repost(
     @CurrentUser() user: any,
@@ -194,6 +226,7 @@ export class PostsController {
 
   // ── GET /posts/user/:userId/repost ─────────────────────────────────────
   @Get('user/:userId/repost')
+  @UseGuards(JwtAuthGuard)
   getUserRepost(
     @CurrentUser() user: any,
     @Param('userId') userId: string,
@@ -209,6 +242,7 @@ export class PostsController {
   }
 
   // ── GET /posts/:id/repost ────────────────────────────────────────────────
+  // Read-only, no per-viewer data returned — safe to leave fully public.
   @Get(':id/repost')
   getRepostOfPost(
     @Param('id') id: string,
@@ -223,6 +257,9 @@ export class PostsController {
   }
 
   // ── GET /posts/:id/comments ───────────────────────────────────────────────
+  // Already had no auth dependency (no @CurrentUser used) — explicitly public
+  // now that the controller-level guard is gone, matching TikTok (anyone can
+  // read comments; only posting one requires login).
   @Get(':id/comments')
   getComments(
     @Param('id') id: string,
@@ -234,6 +271,7 @@ export class PostsController {
 
   // ── POST /posts/:id/comments ──────────────────────────────────────────────
   @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.CREATED)
   addComment(
     @CurrentUser() user: any,
@@ -246,6 +284,7 @@ export class PostsController {
 
   // ── DELETE /posts/:id/comments/:commentId ─────────────────────────────────
   @Delete(':id/comments/:commentId')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   deleteComment(
     @CurrentUser() user: any,

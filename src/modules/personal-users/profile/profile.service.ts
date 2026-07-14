@@ -7,7 +7,7 @@ import { UserProfile } from '@prisma/client';
 import { AvailabilityDto } from './dto/availability.dto';
 
 const USERNAME_LIMIT_DAYS = 5;
-const HANDLE_LIMIT_DAYS = 1;
+const HANDLE_LIMIT_DAYS = 15;
 const AVATAR_LIMIT_MINS = 5;
 
 @Injectable()
