@@ -4,17 +4,29 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { promisify } from 'util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateStoryDto } from './dto/create-story.dto';
+import { MusicService } from '../music/music.service';
+
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class StoriesService {
+  private readonly logger = new Logger(StoriesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly musicService: MusicService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -58,6 +70,9 @@ export class StoriesService {
         views: {
           where: { viewerId },
           select: { id: true },
+        },
+        music: {
+          select: { id: true, title: true, artist: true, artworkUrl: true },
         },
       },
     });
@@ -115,6 +130,30 @@ export class StoriesService {
 
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
+    // ── Music resolution (same pattern as PostsService.create) ────────────
+    let musicId: string | null = null;
+
+    if (dto.musicId) {
+      await this.musicService.assertUsable(dto.musicId);
+      musicId = dto.musicId;
+    } else if (dto.useOriginalAudio && file && mediaType === 'video') {
+      const audioBuffer = await this._extractAudioTrack(file.buffer);
+      if (audioBuffer) {
+        const original = await this.musicService.createOriginalSound(
+          userId,
+          audioBuffer,
+          'audio/mp4',
+        );
+        musicId = original.id;
+      } else {
+        this.logger.warn('useOriginalAudio requested but audio extraction failed; posting story without music');
+      }
+    }
+
+    if (musicId) {
+      await this.musicService.use(musicId).catch(() => null);
+    }
+
     const story = await this.prisma.story.create({
       data: {
         userId,
@@ -123,10 +162,27 @@ export class StoriesService {
         backgroundColor: dto.backgroundColor ?? null,
         mediaType,   // NEW: 'image' | 'video' | 'text'
         expiresAt,
+        musicId,
+        musicStart: musicId ? dto.musicStart ?? 0 : null,
+        musicDuration: musicId ? dto.musicDuration ?? null : null,
+        musicVolume: musicId ? dto.musicVolume ?? 1.0 : null,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            profile: {
+              select: { handle: true, username: true, profilePhoto: true },
+            },
+          },
+        },
+        music: {
+          select: { id: true, title: true, artist: true, artworkUrl: true },
+        },
       },
     });
 
-    return story;
+    return this.toDto(story as any, false);
   }
 
   // ─────────────────────────────────────────────
@@ -244,6 +300,9 @@ export class StoriesService {
           },
         },
         _count: { select: { views: true } },
+        music: {
+          select: { id: true, title: true, artist: true, artworkUrl: true },
+        },
       },
     });
 
@@ -268,6 +327,33 @@ export class StoriesService {
   // Helper
   // ─────────────────────────────────────────────
 
+  private async _extractAudioTrack(videoBuffer: Buffer): Promise<Buffer | null> {
+    try {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'globecart-story-audio-'));
+      const inputPath = path.join(tempDir, 'input.mp4');
+      const outputPath = path.join(tempDir, 'audio.m4a');
+
+      try {
+        await fs.writeFile(inputPath, videoBuffer);
+        await execFileAsync(
+          'ffmpeg',
+          ['-y', '-i', inputPath, '-vn', '-acodec', 'aac', '-b:a', '128k', outputPath],
+          { timeout: 30_000 },
+        );
+        return await fs.readFile(outputPath);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    } catch (err: any) {
+      const reason =
+        err?.code === 'ENOENT'
+          ? 'ffmpeg binary not found on PATH'
+          : err?.stderr || err?.message || String(err);
+      this.logger.error(`Audio track extraction failed: ${reason}`);
+      return null;
+    }
+  }
+
   private toDto(
     story: {
       id: string;
@@ -278,6 +364,10 @@ export class StoriesService {
       mediaType: string;          // 'image' | 'video' | 'text'
       expiresAt: Date;
       createdAt: Date;
+      musicStart?: number | null;
+      musicDuration?: number | null;
+      musicVolume?: number | null;
+      music?: { id: string; title: string; artist: string; artworkUrl: string | null } | null;
       user: {
         id: string;
         profile: {
@@ -309,6 +399,11 @@ export class StoriesService {
       createdAt: story.createdAt,
       viewedByMe,
       viewCount: story.views?.length ?? 0,  // NEW: viewer count on own stories
+      // Music (NEW)
+      music: story.music ?? null,
+      musicStart: story.musicStart ?? null,
+      musicDuration: story.musicDuration ?? null,
+      musicVolume: story.musicVolume ?? null,
       author: {
         id: story.user.id,
         // FIX: null profile guard — avoids empty handle causing StoryRing crash

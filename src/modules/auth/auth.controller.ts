@@ -14,6 +14,7 @@ import {
   IsOptional,
   IsEmail,
   IsPhoneNumber,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 import { AuthService } from './auth.service';
@@ -92,6 +93,73 @@ export class SocialAuthDto {
   initialRole?: string;
 }
 
+// ─── Password DTOs ──────────────────────────────────────────────────────────
+
+/** Shared identifier + via validation, mirrors SendOtpDto. */
+class IdentifierDto {
+  @ValidateIf((o) => o.via === 'email')
+  @IsEmail({}, { message: 'Invalid email address' })
+  @ValidateIf((o) => o.via !== 'email')
+  @IsPhoneNumber(undefined, { message: 'Invalid phone number' })
+  @IsString()
+  identifier!: string;
+
+  @IsOptional()
+  @IsIn(['phone', 'email'])
+  via?: 'phone' | 'email';
+}
+
+export class RegisterPasswordDto extends IdentifierDto {
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
+  initialRole?: string;
+}
+
+export class LoginPasswordDto extends IdentifierDto {
+  @IsString()
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['user', 'personal', 'business', 'driver', 'delivery', 'admin'])
+  initialRole?: string;
+}
+
+export class ChangePasswordDto {
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  newPassword!: string;
+
+  /** Required only if the account already has a password set. */
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+}
+
+export class ForgotPasswordDto extends IdentifierDto {}
+
+export class ResetPasswordDto extends IdentifierDto {
+  @IsString()
+  code!: string;
+
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  newPassword!: string;
+}
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 @Controller('auth')
@@ -119,6 +187,85 @@ export class AuthController {
       dto.flow,
       sessionId,
       dto.initialRole,           // ← Passed to support initial role on signup
+    );
+  }
+
+  // ── Password Auth ────────────────────────────────────────────────────────────
+
+  /**
+   * POST /auth/register-password
+   * Creates a brand-new account secured with a password instead of an OTP
+   * round-trip.
+   */
+  @Post('register-password')
+  registerWithPassword(@Body() dto: RegisterPasswordDto) {
+    return this.auth.registerWithPassword(
+      { via: dto.via ?? 'email', identifier: dto.identifier },
+      dto.password,
+      dto.sessionId,
+      dto.initialRole,
+    );
+  }
+
+  /**
+   * POST /auth/login-password
+   * Logs in with an email/phone + password.
+   */
+  @Post('login-password')
+  @HttpCode(HttpStatus.OK)
+  loginWithPassword(@Body() dto: LoginPasswordDto) {
+    return this.auth.loginWithPassword(
+      { via: dto.via ?? 'email', identifier: dto.identifier },
+      dto.password,
+      dto.sessionId,
+      dto.initialRole,
+    );
+  }
+
+  /**
+   * POST /auth/change-password
+   * Changes (or, for OTP/social-only accounts, sets for the first time)
+   * the password for the currently authenticated user.
+   */
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.auth.changePassword(
+      user.id,
+      dto.newPassword,
+      dto.currentPassword,
+    );
+  }
+
+  /**
+   * POST /auth/forgot-password
+   * Always returns a generic message regardless of whether the identifier
+   * is registered, to avoid account enumeration.
+   */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword({
+      via: dto.via ?? 'email',
+      identifier: dto.identifier,
+    });
+  }
+
+  /**
+   * POST /auth/reset-password
+   * Consumes a forgot-password code and sets a new password.
+   */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(
+      { via: dto.via ?? 'email', identifier: dto.identifier },
+      dto.code,
+      dto.newPassword,
     );
   }
 

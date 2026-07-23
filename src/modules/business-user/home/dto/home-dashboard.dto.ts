@@ -32,7 +32,6 @@ export interface RecentOrderDto {
 export interface BusinessInfoDto {
   id: string;
   name: string;
-  profilePhoto: string | null;
   logoPhoto: string | null;
   location: string | null;
   isActive: boolean;

@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { PostType, FriendStatus } from '@prisma/client';
+import { MusicService } from '../music/music.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,7 @@ export class PostsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly musicService: MusicService,
   ) {}
 
   // ── POST /posts  (multipart upload) ──────────────────────────────────────
@@ -60,6 +62,35 @@ async create(
 
   const type: PostType = resolvedMediaType === 'video' ? PostType.video : PostType.image;
 
+  // ── Music resolution ──────────────────────────────────────────────────
+  // Either the caller referenced an existing library/original track
+  // (musicId), or asked to turn this clip's own audio into a brand new
+  // "Original sound - @username" track. The two are mutually exclusive —
+  // enforced in the controller — so at most one of these runs.
+  let musicId: string | null = null;
+
+  if (dto.musicId) {
+    await this.musicService.assertUsable(dto.musicId);
+    musicId = dto.musicId;
+  } else if (dto.useOriginalAudio && isVideo) {
+    const audioBuffer = await this._extractAudioTrack(primaryFile.buffer);
+    if (audioBuffer) {
+      const original = await this.musicService.createOriginalSound(
+        userId,
+        audioBuffer,
+        'audio/mp4',
+      );
+      musicId = original.id;
+    } else {
+      this.logger.warn('useOriginalAudio requested but audio extraction failed; posting without music');
+    }
+  }
+
+  if (musicId) {
+    // Best-effort — a failed counter bump shouldn't fail post creation.
+    await this.musicService.use(musicId).catch(() => null);
+  }
+
   return this.prisma.post.create({
     data: {
       userId,
@@ -70,6 +101,10 @@ async create(
       caption: dto.caption ?? null,
       audience: dto.audience ?? 'everyone',
       locationTag: dto.locationTag ?? null,
+      musicId,
+      musicStart: musicId ? dto.musicStart ?? 0 : null,
+      musicDuration: musicId ? dto.musicDuration ?? null : null,
+      musicVolume: musicId ? dto.musicVolume ?? 1.0 : null,
     },
     select: this._postSelect(userId),
   });
@@ -715,6 +750,33 @@ async addComment(userId: string, postId: string, body: string) {
     }
   }
 
+  private async _extractAudioTrack(videoBuffer: Buffer): Promise<Buffer | null> {
+    try {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'globecart-audio-'));
+      const inputPath = path.join(tempDir, 'input.mp4');
+      const outputPath = path.join(tempDir, 'audio.m4a');
+
+      try {
+        await fs.writeFile(inputPath, videoBuffer);
+        await execFileAsync(
+          'ffmpeg',
+          ['-y', '-i', inputPath, '-vn', '-acodec', 'aac', '-b:a', '128k', outputPath],
+          { timeout: 30_000 },
+        );
+        return await fs.readFile(outputPath);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    } catch (err: any) {
+      const reason =
+        err?.code === 'ENOENT'
+          ? 'ffmpeg binary not found on PATH'
+          : err?.stderr || err?.message || String(err);
+      this.logger.error(`Audio track extraction failed: ${reason}`);
+      return null;
+    }
+  }
+
   // viewerId is optional so guest requests (no JWT) can still select posts —
   // when it's undefined we filter the per-viewer relations (likes, shares,
   // savedPosts, repost) on a sentinel id that can never match a real user,
@@ -738,6 +800,19 @@ async addComment(userId: string, postId: string, body: string) {
       savedCount: true,       // ← Added
       repostCount: true,    // ← Added
       createdAt: true,
+
+      // Music (NEW)
+      musicStart: true,
+      musicDuration: true,
+      musicVolume: true,
+      music: {
+        select: {
+          id: true,
+          title: true,
+          artist: true,
+          artworkUrl: true,
+        },
+      },
 
       author: {
         select: {

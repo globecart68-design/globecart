@@ -66,6 +66,11 @@ export class PostsController {
     @Body('audience') audience?: string,
     @Body('locationTag') locationTag?: string,
     @Body('mediaType') mediaType?: 'image' | 'video',
+    @Body('musicId') musicId?: string,
+    @Body('musicStart') musicStart?: string,
+    @Body('musicDuration') musicDuration?: string,
+    @Body('musicVolume') musicVolume?: string,
+    @Body('useOriginalAudio') useOriginalAudio?: string,
   ) {
     const resolvedFiles = files ?? [];
     if (resolvedFiles.length === 0) {
@@ -83,11 +88,22 @@ export class PostsController {
       }
     }
 
+    if (musicId && useOriginalAudio === 'true') {
+      throw new BadRequestException(
+        'Send either musicId or useOriginalAudio, not both',
+      );
+    }
+
     return this.postsService.create(user.id, resolvedFiles, {
       caption,
       audience,
       locationTag,
       mediaType,
+      musicId,
+      musicStart: musicStart !== undefined ? parseInt(musicStart) : undefined,
+      musicDuration: musicDuration !== undefined ? parseInt(musicDuration) : undefined,
+      musicVolume: musicVolume !== undefined ? parseFloat(musicVolume) : undefined,
+      useOriginalAudio: useOriginalAudio === 'true',
     });
   }
 

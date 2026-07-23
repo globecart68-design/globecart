@@ -27,8 +27,19 @@ const ALLOWED_VIDEO_TYPES = [
 
 const ALLOWED_STORY_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
 
+const ALLOWED_AUDIO_TYPES = [
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/ogg',
+];
+
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;  //  20 MB
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;  //  25 MB — a few minutes of audio
 
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -179,6 +190,34 @@ export class StorageService implements OnModuleInit {
     );
 
     this.logger.log(`Deleted file: ${key}`);
+  }
+
+  // ─────────────────────────────────────────────
+  // Music: sound file + artwork upload
+  // ─────────────────────────────────────────────
+
+  async uploadMusicAudio(file: Express.Multer.File): Promise<string> {
+    if (!ALLOWED_AUDIO_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(`Unsupported audio type: ${file.mimetype}`);
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      throw new BadRequestException(
+        `File too large. Max audio size is ${MAX_AUDIO_BYTES / 1024 / 1024} MB`,
+      );
+    }
+    return this.uploadBuffer(file.buffer, file.mimetype, 'music/audio');
+  }
+
+  async uploadMusicArtwork(file: Express.Multer.File): Promise<string> {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(`Unsupported image type: ${file.mimetype}`);
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      throw new BadRequestException(
+        `File too large. Max artwork size is ${MAX_IMAGE_BYTES / 1024 / 1024} MB`,
+      );
+    }
+    return this.uploadBuffer(file.buffer, file.mimetype, 'music/artwork');
   }
 
   // ── uploadBuffer  (used by PostsService) ─────────────────────────────────────

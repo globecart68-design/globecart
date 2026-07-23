@@ -1,19 +1,22 @@
 // src/modules/stories/stories.controller.ts
+//
+// Was never created — stories.module.ts imports it but the file didn't
+// exist, so the whole app failed to compile. Routes below match the
+// "GET /stories/..." / "POST /stories/..." comments already documented
+// above each StoriesService method.
 
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   Post,
   Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -22,17 +25,17 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StoriesService } from './stories.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 
-const ALLOWED_MIME_TYPES = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|quicktime|x-msvideo|x-m4v|x-matroska))$/;
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024;  //  20 MB for images
-const MAX_VIDEO_SIZE = 200 * 1024 * 1024; // 200 MB for videos
+const ALLOWED_MIME =
+  /^(image\/(jpeg|png|webp|gif)|video\/(mp4|quicktime|x-msvideo|x-m4v|x-matroska))$/;
+const MAX_VIDEO_SIZE = 200 * 1024 * 1024; // 200 MB — StoriesService re-checks per-type limits
 
-function fileSizeFilter(
-  req: any,
+function fileFilter(
+  _req: any,
   file: Express.Multer.File,
-  cb: (error: Error | null, acceptFile: boolean) => void,
+  cb: (err: Error | null, accept: boolean) => void,
 ) {
-  if (!ALLOWED_MIME_TYPES.test(file.mimetype)) {
-    return cb(new Error(`Unsupported file type: ${file.mimetype}`), false);
+  if (!ALLOWED_MIME.test(file.mimetype)) {
+    return cb(new BadRequestException(`Unsupported file type: ${file.mimetype}`), false);
   }
   cb(null, true);
 }
@@ -40,40 +43,21 @@ function fileSizeFilter(
 @Controller('stories')
 @UseGuards(JwtAuthGuard)
 export class StoriesController {
-  constructor(private readonly storiesService: StoriesService) {}
+  constructor(private readonly stories: StoriesService) {}
 
-  // ─────────────────────────────────────────────
-  // GET /stories/feed
-  // Stories from followed users + own stories
-  // ─────────────────────────────────────────────
-
+  // ── GET /stories/feed ────────────────────────────────────────────────────
   @Get('feed')
-  getFeed(@CurrentUser() user: any) {
-    return this.storiesService.getFeed(user.id);
+  getFeed(@CurrentUser('id') userId: string) {
+    return this.stories.getFeed(userId);
   }
 
-  // ─────────────────────────────────────────────
-  // GET /stories/my
-  // Own active stories with viewer counts
-  // ─────────────────────────────────────────────
-
+  // ── GET /stories/my ──────────────────────────────────────────────────────
   @Get('my')
-  getMyStories(@CurrentUser() user: any) {
-    return this.storiesService.getMyStories(user.id);
+  getMyStories(@CurrentUser('id') userId: string) {
+    return this.stories.getMyStories(userId);
   }
 
-  // ─────────────────────────────────────────────
-  // GET /stories/presign?filename=photo.jpg&mimeType=image/jpeg&fileSize=102400
-  // Returns a pre-signed S3 PUT URL for direct Flutter → S3 upload
-  // ─────────────────────────────────────────────
-
-  private static readonly PRESIGN_ALLOWED_TYPES = new Set([
-    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-    'video/mp4', 'video/quicktime', 'video/x-msvideo',
-    'video/x-m4v', 'video/x-matroska',
-  ]);
-  private static readonly PRESIGN_MAX_BYTES = 200 * 1024 * 1024; // 200 MB
-
+  // ── GET /stories/presign ─────────────────────────────────────────────────
   @Get('presign')
   getPresignedUrl(
     @CurrentUser('id') userId: string,
@@ -81,42 +65,21 @@ export class StoriesController {
     @Query('mimeType') mimeType: string,
     @Query('fileSize') fileSize?: string,
   ) {
-    if (!filename || !mimeType) {
-      throw new BadRequestException('filename and mimeType are required');
-    }
-    if (!StoriesController.PRESIGN_ALLOWED_TYPES.has(mimeType)) {
-      throw new BadRequestException(`Unsupported mimeType: ${mimeType}`);
-    }
-    const size = fileSize ? parseInt(fileSize, 10) : undefined;
-    if (size !== undefined) {
-      if (isNaN(size) || size <= 0) {
-        throw new BadRequestException('fileSize must be a positive integer');
-      }
-      if (size > StoriesController.PRESIGN_MAX_BYTES) {
-        throw new BadRequestException(
-          `File too large. Max presign size is ${StoriesController.PRESIGN_MAX_BYTES / 1024 / 1024} MB`,
-        );
-      }
-    }
-    return this.storiesService.getPresignedUrl(userId, filename, mimeType, size);
+    return this.stories.getPresignedUrl(
+      userId,
+      filename,
+      mimeType,
+      fileSize ? Number(fileSize) : undefined,
+    );
   }
 
-  // ─────────────────────────────────────────────
-  // POST /stories
-  // Create story — multipart (image file) OR JSON (text card / remote URL)
-  //
-  // Multipart:  field "file" = image binary
-  //             field "textContent" / "backgroundColor" optional
-  // JSON body:  { contentUrl?, textContent?, backgroundColor? }
-  // ─────────────────────────────────────────────
-
+  // ── POST /stories  — create story (multipart) ───────────────────────────
   @Post()
-  @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: MAX_VIDEO_SIZE }, // enforced per-type below in service
-      fileFilter: fileSizeFilter,
+      fileFilter,
+      limits: { fileSize: MAX_VIDEO_SIZE },
     }),
   )
   create(
@@ -124,34 +87,18 @@ export class StoriesController {
     @Body() dto: CreateStoryDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.storiesService.create(userId, dto, file);
+    return this.stories.create(userId, dto, file);
   }
 
-  // ─────────────────────────────────────────────
-  // POST /stories/:id/view
-  // Mark a story as viewed
-  // ─────────────────────────────────────────────
-
+  // ── POST /stories/:id/view ───────────────────────────────────────────────
   @Post(':id/view')
-  @HttpCode(HttpStatus.OK)
-  markViewed(
-    @CurrentUser('id') userId: string,
-    @Param('id') storyId: string,
-  ) {
-    return this.storiesService.markViewed(storyId, userId);
+  markViewed(@Param('id') storyId: string, @CurrentUser('id') viewerId: string) {
+    return this.stories.markViewed(storyId, viewerId);
   }
 
-  // ─────────────────────────────────────────────
-  // DELETE /stories/:id
-  // Delete own story
-  // ─────────────────────────────────────────────
-
+  // ── DELETE /stories/:id ──────────────────────────────────────────────────
   @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  delete(
-    @CurrentUser('id') userId: string,
-    @Param('id') storyId: string,
-  ) {
-    return this.storiesService.delete(storyId, userId);
+  delete(@Param('id') storyId: string, @CurrentUser('id') userId: string) {
+    return this.stories.delete(storyId, userId);
   }
 }

@@ -28,6 +28,17 @@ enum PostType {
   reel
 }
 
+enum MusicSource {
+  library
+  original
+}
+
+enum MusicStatus {
+  processing
+  ready
+  blocked
+}
+
 enum MessageType {
   text
   image
@@ -78,6 +89,25 @@ enum AssignedOrderStatus {
   failed
 }
 
+/// Drop-off instruction the customer leaves for the Address-mode delivery
+/// sheet — mirrors the Ring Bell / Call Me / Leave at Door chips in the
+/// Flutter Map Hub.
+enum DropoffPreference {
+  ring_bell
+  call_me
+  leave_at_door
+}
+
+/// Order tracking timeline steps shown in Track mode — one enum value per
+/// step in the Flutter TrackingTimeline widget.
+enum TrackingStatus {
+  order_confirmed
+  preparing
+  picked_up
+  on_the_way
+  delivered
+}
+
 enum ReportTargetType {
   user
   post
@@ -111,6 +141,7 @@ model User {
   id             String         @id @default(uuid())
   email          String?        @unique
   phone          String?        @unique
+  passwordHash   String? // Set only for accounts using password auth; null for OTP/social-only accounts
   createdAt      DateTime       @default(now())
   // Auth & Role Management
   providers      AuthProvider[]
@@ -132,6 +163,8 @@ model User {
   // Content
   posts        Post[]
   stories      Story[]
+  uploadedMusic Music[]
+  favoriteMusic MusicFavorite[]
   storyViews   StoryView[]
   postLikes    PostLike[]
   postComments PostComment[]
@@ -149,6 +182,7 @@ model User {
   driverProfile    DriverProfile?
   deliveryProfile  DeliveryProfile?
   ridesAsCustomer  Ride[]
+  addresses        Address[]
   // Moderation
   blocksGiven      Block[]          @relation("BlocksGiven")
   blocksReceived   Block[]          @relation("BlocksReceived")
@@ -230,12 +264,13 @@ model OTPCode {
   phone     String?
   email     String?
   code      String
+  purpose   String   @default("auth") // 'auth' | 'password_reset' — see OtpPurpose in auth.service.ts
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  @@index([phone, expiresAt])
-  @@index([email, expiresAt])
+  @@index([phone, purpose, expiresAt])
+  @@index([email, purpose, expiresAt])
   @@index([expiresAt])
 }
 
@@ -305,6 +340,13 @@ model Post {
   savedCount    Int @default(0) // ← Added
   repostCount Int @default(0)
 
+  // Music (sound attached to this post, TikTok/Reels-style)
+  musicId       String?
+  musicStart    Int?     @default(0)   // seconds into the track where playback starts
+  musicDuration Int?                    // seconds of the track actually used
+  musicVolume   Float?   @default(1.0) // 0.0 - 1.0, mix level against original clip audio
+  music         Music?   @relation(fields: [musicId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -319,6 +361,7 @@ model Post {
 
   @@index([userId])
   @@index([createdAt(sort: Desc)])
+  @@index([musicId])
 }
 
 model PostLike {
@@ -358,10 +401,18 @@ model Story {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // Music (sound attached to this story)
+  musicId       String?
+  musicStart    Int?     @default(0)
+  musicDuration Int?
+  musicVolume   Float?   @default(1.0)
+  music         Music?   @relation(fields: [musicId], references: [id], onDelete: SetNull)
+
   user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   views StoryView[]
 
   @@index([userId, expiresAt])
+  @@index([musicId])
 }
 
 model StoryView {
@@ -375,6 +426,60 @@ model StoryView {
 
   @@unique([storyId, viewerId])
   @@index([storyId])
+}
+
+model Music {
+  id           String       @id @default(uuid())
+  title        String
+  artist       String
+  album        String?
+  artworkUrl   String?
+
+  audioUrl     String
+  duration     Int
+
+  source       MusicSource  @default(library)
+  status       MusicStatus  @default(ready)
+
+  uploadedById String?
+  uploadedBy   User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  playCount    Int @default(0)
+  useCount     Int @default(0)
+  favoriteCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts          Post[]
+  stories        Story[]
+  businessPosts  BusinessPost[]
+  businessStories BusinessStory[]
+  favorites      MusicFavorite[]
+
+  @@index([title])
+  @@index([artist])
+  @@index([uploadedById])
+  @@index([createdAt(sort: Desc)])
+  @@index([source])
+  @@index([status])
+}
+
+/// A user "favoriting" (saving) a sound to their own sound library.
+/// Backs POST /music/:id/favorite and DELETE /music/:id/favorite, and keeps
+/// Music.favoriteCount as a fast denormalized counter in sync.
+model MusicFavorite {
+  id        String   @id @default(uuid())
+  userId    String
+  musicId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  music Music @relation(fields: [musicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, musicId])
+  @@index([userId])
+  @@index([musicId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,6 +561,7 @@ model Business {
   location       String?
   profilePhoto   String?
   logoPhoto      String?
+  bannerPhoto    String?
   createdAt      DateTime         @default(now())
   parentId       String?
   parent         Business?        @relation("BusinessHierarchy", fields: [parentId], references: [id])
@@ -576,7 +682,15 @@ model BusinessPost {
   createdAt  DateTime @default(now())
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
+  // Music (sound attached to this business post)
+  musicId       String?
+  musicStart    Int?     @default(0)
+  musicDuration Int?
+  musicVolume   Float?   @default(1.0)
+  music         Music?   @relation(fields: [musicId], references: [id], onDelete: SetNull)
+
   @@index([businessId])
+  @@index([musicId])
 }
 
 model BusinessStory {
@@ -587,8 +701,16 @@ model BusinessStory {
   createdAt  DateTime @default(now())
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
+  // Music (sound attached to this business story)
+  musicId       String?
+  musicStart    Int?     @default(0)
+  musicDuration Int?
+  musicVolume   Float?   @default(1.0)
+  music         Music?   @relation(fields: [musicId], references: [id], onDelete: SetNull)
+
   @@index([businessId])
   @@index([expiresAt])
+  @@index([musicId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -605,6 +727,7 @@ model Order {
   business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   items      OrderItem[]
   assignedTo AssignedOrder[]
+  tracking   OrderTracking?
 
   @@index([customerId])
   @@index([businessId])
@@ -670,19 +793,39 @@ model DriverProfile {
 
 model Ride {
   id             String        @id @default(uuid())
-  driverId       String
+  // Nullable: a ride is created in `requested` status before a driver has
+  // been matched (POST /rides/request). driverId is set once matched.
+  driverId       String?
   customerId     String
   pickupLocation String
   dropLocation   String
+  // Coordinates alongside the human-readable labels above — the labels are
+  // what's shown in the UI, the coordinates are what the map/gateway needs
+  // for markers, routing, and ETA.
+  pickupLat      Float
+  pickupLng      Float
+  dropLat        Float
+  dropLng        Float
+  vehicleType    String        @default("economy") // economy | comfort | xl | bike
   status         RideStatus    @default(requested)
   fare           Float
+  distanceKm     Float?
+  etaMinutes     Int?
+  cancelReason   String?
   createdAt      DateTime      @default(now())
-  driver         DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  acceptedAt     DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  // SetNull (not Cascade) — losing a driver profile shouldn't delete ride
+  // history, just orphan the reference.
+  driver         DriverProfile? @relation(fields: [driverId], references: [id], onDelete: SetNull)
   customer       User          @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([driverId])
   @@index([customerId])
   @@index([status])
+  @@index([customerId, createdAt])
 }
 
 model DriverLocation {
@@ -694,6 +837,7 @@ model DriverLocation {
   driver    DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
   @@index([driverId])
+  @@index([driverId, updatedAt])
 }
 
 model DeliveryProfile {
@@ -801,4 +945,64 @@ model Report {
   @@index([reporterId])
   @@index([targetType, targetId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Map Hub — Saved Addresses (Address mode)
+// ─────────────────────────────────────────────────────────────────────────────
+model Address {
+  id                String            @id @default(uuid())
+  userId            String
+  nickname          String // "Home", "Work", "Other", or a custom label
+  fullAddress       String
+  latitude          Float
+  longitude         Float
+  building          String?
+  floor             String?
+  apartment         String?
+  instructions      String?
+  dropoffPreference DropoffPreference @default(ring_bell)
+  isDefault         Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isDefault])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Map Hub — Order Tracking (Track mode)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Live tracking snapshot for one Order — current status + the delivery
+/// driver's last known position. One row per Order; history of status
+/// changes lives in OrderTrackingEvent.
+model OrderTracking {
+  id         String               @id @default(uuid())
+  orderId    String               @unique
+  status     TrackingStatus       @default(order_confirmed)
+  driverLat  Float?
+  driverLng  Float?
+  etaMinutes Int?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  order      Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events     OrderTrackingEvent[]
+
+  @@index([orderId])
+}
+
+/// Append-only status history for an OrderTracking row — backs the
+/// "✓ Order Confirmed / ✓ Preparing / ● On the Way / ○ Delivered" timeline.
+model OrderTrackingEvent {
+  id         String         @id @default(uuid())
+  trackingId String
+  status     TrackingStatus
+  note       String?
+  createdAt  DateTime       @default(now())
+  tracking   OrderTracking  @relation(fields: [trackingId], references: [id], onDelete: Cascade)
+
+  @@index([trackingId])
+  @@index([createdAt])
 }

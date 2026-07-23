@@ -29,6 +29,7 @@ export class BusinessProfileService {
         location: true,
         profilePhoto: true,
         logoPhoto: true,
+        bannerPhoto: true,
         isActive: true,
         createdAt: true,
       },
@@ -152,9 +153,9 @@ export class BusinessProfileService {
     const bannerUrl = await this.storage.uploadAvatar(file);
 
     // Delete old banner if exists
-    if (business.profilePhoto) {
+    if (business.bannerPhoto) {
       try {
-        await this.storage.deleteFile(business.profilePhoto);
+        await this.storage.deleteFile(business.bannerPhoto);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`Failed to delete old banner: ${message}`);
@@ -164,7 +165,7 @@ export class BusinessProfileService {
     // Update business with new banner URL
     await this.prisma.business.update({
       where: { id: business.id },
-      data: { profilePhoto: bannerUrl },
+      data: { bannerPhoto: bannerUrl },
     });
 
     // Return updated profile with stats

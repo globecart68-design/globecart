@@ -1,12 +1,17 @@
 import {
+  IsBoolean,
+  IsNumber,
   IsOptional,
   IsString,
   IsUrl,
   IsIn,
+  Max,
   MaxLength,
   Matches,
+  Min,
   Validate,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { StoryContentConstraint } from '../../../common/validators/story-content.constraint';
 
 export class CreateStoryDto {
@@ -33,4 +38,33 @@ export class CreateStoryDto {
     message: 'mediaType must be image, video, or text',
   })
   mediaType!: 'image' | 'video' | 'text';
+
+  // ── Music ──────────────────────────────────────────────────────────────
+  @IsOptional()
+  @IsString()
+  musicId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === '' ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  musicStart?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === '' ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  musicDuration?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === '' ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  musicVolume?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  useOriginalAudio?: boolean;
 }

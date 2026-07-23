@@ -39,7 +39,6 @@ export class BusinessHomeService {
       select: {
         id: true,
         name: true,
-        profilePhoto: true,
         logoPhoto: true,
         location: true,
         isActive: true,

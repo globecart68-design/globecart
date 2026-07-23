@@ -19,8 +19,8 @@ export interface BusinessProfileDto {
   businessType: string;
   description: string | null;
   location: string | null;
-  profilePhoto: string | null;
   logoPhoto: string | null;
+  bannerPhoto: string | null;
   isActive: boolean;
   createdAt: Date;
 

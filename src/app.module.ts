@@ -1,16 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { AuthModule } from './modules/auth/auth.module';
 
 import { NotificationModule } from './modules/notifications/notification.module';
 import { StoriesModule } from './modules/stories/stories.module';
  import { PostsModule } from './modules/posts/posts.module';
+import { MusicModule } from './modules/music/music.module';
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 import { BusinessOnboardingModule } from './modules/onboarding/business/business-onboarding.module';
@@ -33,10 +36,23 @@ import { BusinessPaymentsModule } from './modules/business-user/payments/busines
 import { BusinessProductsModule } from './modules/business-user/products/business-products.module';
 import { BusinessInventoryModule } from './modules/business-user/inventory/business-inventory.module';
 
+// ─── Map Hub ─────────────────────────────────────────────────────────────────
+import { MapsModule } from './modules/maps/maps.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
+import { RidesModule } from './modules/rides/rides.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
+import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { WebsocketModule } from './modules/websocket/websocket.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Powers the domain-event → WS-broadcast decoupling in RealtimeGateway
+    // (RidesService/TrackingService emit 'ride.status_updated' etc.
+    // without knowing anything about Socket.IO).
+    EventEmitterModule.forRoot(),
     PrismaModule,
+    RedisModule,
     
     // Auth & sessions
     SessionsModule,
@@ -60,6 +76,7 @@ import { BusinessInventoryModule } from './modules/business-user/inventory/busin
     //
     StoriesModule,
      PostsModule, 
+    MusicModule,
 
     // Business dashboard tabs
     BusinessHomeModule,
@@ -69,6 +86,14 @@ import { BusinessInventoryModule } from './modules/business-user/inventory/busin
     BusinessPaymentsModule,
     BusinessProductsModule,
     BusinessInventoryModule,
+
+    // Map Hub — Address / Ride / Track
+    MapsModule,
+    AddressesModule,
+    RidesModule,
+    TrackingModule,
+    DeliveriesModule,
+    WebsocketModule,
   ],
   controllers: [AppController],
   providers: [AppService],

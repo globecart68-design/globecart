@@ -53,8 +53,8 @@ export class ShopsService {
         name: true,
         businessType: true,
         location: true,
-        profilePhoto: true,
         logoPhoto: true,
+        bannerPhoto: true,
         createdAt: true,
         reviews: { select: { rating: true } },
       },
@@ -67,7 +67,7 @@ export class ShopsService {
           ? b.reviews.reduce((sum, r) => sum + r.rating, 0) / b.reviews.length
           : 0.0;
 
-      const logoUrl = b.logoPhoto ?? b.profilePhoto ?? '';
+      const logoUrl = b.logoPhoto ?? '';
 
       return {
         id: b.id,
@@ -82,6 +82,7 @@ export class ShopsService {
         openNow: true,
         imageUrl: logoUrl,
         logoPhoto: logoUrl,
+        bannerUrl: b.bannerPhoto ?? '',
         location: b.location ?? '',
       };
     });
@@ -106,7 +107,7 @@ export class ShopsService {
             businessType: true,
             description: true,
             location: true,
-            profilePhoto: true,
+            logoPhoto: true,
           },
         },
       },
@@ -125,7 +126,6 @@ export class ShopsService {
         id: true,
         name: true,
         logoPhoto: true,
-        profilePhoto: true,
         location: true,
       },
     });
@@ -142,7 +142,7 @@ export class ShopsService {
       id: p.id,
       shopId: business.id,
       shopName: business.name,
-      shopAvatarUrl: business.logoPhoto ?? business.profilePhoto ?? '',
+      shopAvatarUrl: business.logoPhoto ?? '',
       description: p.description ?? p.name,
       price: p.price,
       currency: 'USD',
