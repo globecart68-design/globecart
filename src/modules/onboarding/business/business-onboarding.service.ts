@@ -80,7 +80,7 @@ export class BusinessOnboardingService {
 
     if (existing) {
       // Update existing instead of creating duplicate
-      return this.prisma.business.update({
+      const updated = await this.prisma.business.update({
         where: { id: existing.id },
         data: {
           name: dto.name,
@@ -89,6 +89,8 @@ export class BusinessOnboardingService {
           location: dto.location,
         },
       });
+      await this.commitActiveRole(userId);
+      return updated;
     }
 
     const business = await this.prisma.business.create({
@@ -115,9 +117,26 @@ export class BusinessOnboardingService {
       skipDuplicates: true,
     });
 
+    await this.commitActiveRole(userId);
+
     this.logger.log(`Business registered for user ${userId}: ${dto.name}`);
 
     return business;
+  }
+
+  // Submitting the shop setup form is what actually commits the earlier
+  // `/auth/switch-role { role: "business" }` call — see the matching note
+  // in AuthService.switchRole(). Best-effort: a failure here shouldn't
+  // fail the business registration itself.
+  private async commitActiveRole(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastActiveRole: BUSINESS_ROLE },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to commit lastActiveRole="business" for user ${userId}: ${err}`);
+    }
   }
 
   // ─── Get My Businesses ────────────────────────────────────────────────────────

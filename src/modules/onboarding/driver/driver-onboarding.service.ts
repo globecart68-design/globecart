@@ -44,16 +44,18 @@ export class DriverOnboardingService {
       if (existing.isActive) {
         throw new ConflictException('You already have an active driver profile.');
       }
-      return this.prisma.driverProfile.update({
+      const updated = await this.prisma.driverProfile.update({
         where: { userId },
         data: {
           vehicleType: dto.vehicleType,
           licenseNumber: dto.licenseNumber,
         },
       });
+      await this.commitActiveRole(userId);
+      return updated;
     }
 
-    return this.prisma.driverProfile.create({
+    const created = await this.prisma.driverProfile.create({
       data: {
         userId,
         vehicleType: dto.vehicleType,
@@ -61,6 +63,23 @@ export class DriverOnboardingService {
         isActive: false,
       },
     });
+    await this.commitActiveRole(userId);
+    return created;
+  }
+
+  // Submitting the application is what actually commits the earlier
+  // `/auth/switch-role { role: "driver" }` call — see the matching note in
+  // AuthService.switchRole(). Best-effort: a failure here shouldn't fail
+  // the application submission itself.
+  private async commitActiveRole(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastActiveRole: DRIVER_ROLE },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to commit lastActiveRole="driver" for user ${userId}: ${err}`);
+    }
   }
 
   // ─── Get my application status ─────────────────────────────────────────────

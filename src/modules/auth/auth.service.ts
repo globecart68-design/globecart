@@ -289,17 +289,50 @@ export class AuthService {
       );
     }
 
-    // Persist last used role
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { lastActiveRole: requestedRole },
-    });
+    // Persist last used role — but only once its onboarding gate has
+    // actually been submitted. Business/Delivery/Driver each show a
+    // setup/apply screen the first time you enter their shell (see
+    // RoleAccessGate / BusinessSetupGate on the client); if we persisted
+    // lastActiveRole here, a user who switches then backs out without
+    // submitting would land right back on that unfinished gate on their
+    // next login. Deferring the commit to submission time keeps a
+    // half-started switch from sticking. The JWT still carries the
+    // requested role for *this* session either way, so the client can
+    // reach the gate screen and submit it.
+    const gateSatisfied = await this.isRoleGateSatisfied(userId, requestedRole);
+    if (gateSatisfied) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastActiveRole: requestedRole },
+      });
+    } else {
+      this.logger.log(
+        `User ${userId} switched to "${requestedRole}" with its onboarding gate ` +
+          `still unsubmitted — not persisting as lastActiveRole until they submit it.`,
+      );
+    }
 
     const { accessToken } = this.signToken(userId, requestedRole, roleNames);
 
     this.logger.log(`User ${userId} switched active role to "${requestedRole}"`);
 
     return { accessToken, activeRole: requestedRole, roles: roleNames };
+  }
+
+  /** Whether `role`'s onboarding gate (if any) has already been submitted
+   *  for this user, so a role switch into it is safe to persist. Roles
+   *  with no gate (e.g. the default `user` role) are always satisfied. */
+  private async isRoleGateSatisfied(userId: string, role: string): Promise<boolean> {
+    switch (role) {
+      case 'business':
+        return (await this.prisma.business.count({ where: { ownerId: userId } })) > 0;
+      case 'driver':
+        return (await this.prisma.driverProfile.count({ where: { userId } })) > 0;
+      case 'delivery':
+        return (await this.prisma.deliveryProfile.count({ where: { userId } })) > 0;
+      default:
+        return true;
+    }
   }
 
   // ─── Password Auth ────────────────────────────────────────────────────────────

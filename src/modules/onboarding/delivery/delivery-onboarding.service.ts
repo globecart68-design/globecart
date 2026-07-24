@@ -33,13 +33,15 @@ export class DeliveryOnboardingService {
       }
 
       // Update pending application
-      return this.prisma.deliveryProfile.update({
+      const updated = await this.prisma.deliveryProfile.update({
         where: { userId },
         data: {
           vehicleType: dto.vehicleType,
           licenseNumber: dto.licenseNumber,
         },
       });
+      await this.commitActiveRole(userId);
+      return updated;
     }
 
     const profile = await this.prisma.deliveryProfile.create({
@@ -50,9 +52,25 @@ export class DeliveryOnboardingService {
         isActive: false, // Requires admin approval
       },
     });
+    await this.commitActiveRole(userId);
 
     this.logger.log(`New delivery application submitted by user ${userId}`);
     return profile;
+  }
+
+  // Submitting the application is what actually commits the earlier
+  // `/auth/switch-role { role: "delivery" }` call — see the matching note
+  // in AuthService.switchRole(). Best-effort: a failure here shouldn't
+  // fail the application submission itself.
+  private async commitActiveRole(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastActiveRole: DELIVERY_ROLE },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to commit lastActiveRole="delivery" for user ${userId}: ${err}`);
+    }
   }
 
   // ─── Get Application Status ──────────────────────────────────────────────────
