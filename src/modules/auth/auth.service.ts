@@ -305,16 +305,15 @@ export class AuthService {
         where: { id: userId },
         data: { lastActiveRole: requestedRole },
       });
+      this.logger.log(`User ${userId} switched active role to "${requestedRole}"`);
     } else {
       this.logger.log(
-        `User ${userId} switched to "${requestedRole}" with its onboarding gate ` +
-          `still unsubmitted — not persisting as lastActiveRole until they submit it.`,
+        `User ${userId} issued a token for "${requestedRole}" but its onboarding ` +
+          `gate is unsubmitted — lastActiveRole NOT persisted until they submit it.`,
       );
     }
 
     const { accessToken } = this.signToken(userId, requestedRole, roleNames);
-
-    this.logger.log(`User ${userId} switched active role to "${requestedRole}"`);
 
     return { accessToken, activeRole: requestedRole, roles: roleNames };
   }
