@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength, IsEnum } from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength, IsEnum, IsNumber, Min } from 'class-validator';
 import { BusinessType } from '@prisma/client';
 import { OperatingHourResponseDto } from './operating-hours.dto';
 
@@ -23,6 +23,7 @@ export interface BusinessProfileDto {
   bannerPhoto: string | null;
   isActive: boolean;
   createdAt: Date;
+  minOrderAmount: number | null;
 
   /** Aggregated lifetime stats. */
   stats: BusinessStatsDto;
@@ -68,4 +69,13 @@ export class UpdateBusinessProfileDto {
   @IsOptional()
   @IsEnum(BusinessType, { message: 'Invalid business type selected.' })
   businessType?: BusinessType;
+
+  /**
+   * Minimum order subtotal a customer must reach to check out from this shop.
+   * Pass `null` to remove the minimum (no threshold).
+   */
+  @IsOptional()
+  @IsNumber({}, { message: 'Minimum order amount must be a number.' })
+  @Min(0, { message: 'Minimum order amount cannot be negative.' })
+  minOrderAmount?: number | null;
 }

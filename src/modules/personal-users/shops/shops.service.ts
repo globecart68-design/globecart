@@ -56,6 +56,7 @@ export class ShopsService {
         logoPhoto: true,
         bannerPhoto: true,
         createdAt: true,
+        minOrderAmount: true,
         reviews: { select: { rating: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -84,6 +85,7 @@ export class ShopsService {
         logoPhoto: logoUrl,
         bannerUrl: b.bannerPhoto ?? '',
         location: b.location ?? '',
+        minOrderAmount: b.minOrderAmount,
       };
     });
   }
@@ -154,6 +156,9 @@ export class ShopsService {
       isSaved: false,
       location: business.location ?? '',
       variants: (p.variants ?? []).map((v) => v.name ?? ''),
+      // Untracked-inventory products (made-to-order, services, etc.) report
+      // stock as null so the storefront treats them as unlimited.
+      stock: p.trackInventory ? p.stock : null,
     }));
   }
 }

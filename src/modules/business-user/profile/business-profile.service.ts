@@ -32,6 +32,7 @@ export class BusinessProfileService {
         bannerPhoto: true,
         isActive: true,
         createdAt: true,
+        minOrderAmount: true,
       },
     });
 
@@ -125,6 +126,7 @@ export class BusinessProfileService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.location !== undefined && { location: dto.location }),
         ...(dto.businessType !== undefined && { businessType: dto.businessType }),
+        ...(dto.minOrderAmount !== undefined && { minOrderAmount: dto.minOrderAmount }),
       },
     });
 

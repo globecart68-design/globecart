@@ -576,6 +576,7 @@ model Business {
   stories        BusinessStory[]
   operatingHours OperatingHours[]
   isActive       Boolean          @default(false)
+  minOrderAmount Float?
 
   @@index([ownerId])
   @@index([businessType])

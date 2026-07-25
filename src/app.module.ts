@@ -23,6 +23,7 @@ import { DeliveryOnboardingModule } from './modules/onboarding/delivery/delivery
 // ______________________________________________________________________________
 import { SocialModule } from './modules/personal-users/social-graph/social/social.module';
 import { ShopsModule } from './modules/personal-users/shops/shops.module';
+import { OrdersModule } from './modules/personal-users/orders/orders.module';
 import { FriendsModule } from './modules/personal-users/social-graph/friends/friends.module';
 import { BlocksModule } from './modules/personal-users/social-graph/blocks/blocks.module';
 import { ProfileModule } from './modules/personal-users/profile/profile.module';
@@ -62,6 +63,7 @@ import { WebsocketModule } from './modules/websocket/websocket.module';
     ProfileModule,
     SocialModule,
     ShopsModule,
+    OrdersModule,
     FriendsModule,
     BlocksModule,
 
