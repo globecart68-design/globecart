@@ -33,6 +33,7 @@ import { BusinessHomeModule } from './modules/business-user/home/business-home.m
 import { BusinessProfileModule } from './modules/business-user/profile/business-profile.module';
 import { BusinessAnalyticsModule } from './modules/business-user/analytics/business-analytics.module';
 import { BusinessCustomersModule } from './modules/business-user/customers/business-customers.module';
+import { BusinessOrdersModule } from './modules/business-user/orders/business-orders.module';
 import { BusinessPaymentsModule } from './modules/business-user/payments/business-payments.module';
 import { BusinessProductsModule } from './modules/business-user/products/business-products.module';
 import { BusinessInventoryModule } from './modules/business-user/inventory/business-inventory.module';
@@ -85,6 +86,7 @@ import { WebsocketModule } from './modules/websocket/websocket.module';
     BusinessProfileModule,
     BusinessAnalyticsModule,
     BusinessCustomersModule,
+    BusinessOrdersModule,
     BusinessPaymentsModule,
     BusinessProductsModule,
     BusinessInventoryModule,
