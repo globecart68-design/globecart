@@ -10,6 +10,6 @@ import { PrismaModule } from '../../prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [NotificationController],
   providers: [SnsService, NotificationService, DeviceTokenService],
-  exports: [NotificationService], // export so other modules can call send()
+  exports: [NotificationService, DeviceTokenService], // export so other modules can call send() / clean up tokens
 })
 export class NotificationModule {}

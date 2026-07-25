@@ -28,6 +28,7 @@ import {
 } from './social-auth/social_token_verifier.service';
 import { RolesService } from '../roles/roles.service';
 import { BusinessOnboardingService } from '../onboarding/business/business-onboarding.service';
+import { DeviceTokenService } from '../notifications/device-token.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -96,6 +97,7 @@ export class AuthService {
     private readonly socialVerifier: SocialTokenVerifierService,
     private readonly rolesService: RolesService, // ← Added
     private readonly businessOnboarding: BusinessOnboardingService,
+    private readonly deviceTokens: DeviceTokenService,
   ) {
     this.OTP_EXPIRY_MS = parseInt(
       this.config.get<string>('OTP_EXPIRY_MS', String(5 * 60 * 1000)),
@@ -425,6 +427,63 @@ export class AuthService {
     this.logger.log(`Password ${user.passwordHash ? 'changed' : 'set'} for user ${userId}`);
 
     return { message: 'Password updated' };
+  }
+
+  // ─── Logout / Account Deletion ─────────────────────────────────────────────────
+
+  /** Auth is stateless JWT, so there's no server-side token to revoke — logout
+   *  is mostly a client-side concern (drop the stored token). The one thing
+   *  the server *can* do is stop push notifications to this device by
+   *  unregistering its token, so we do that here when the client supplies it. */
+  async logout(userId: string, deviceToken?: string): Promise<{ message: string }> {
+    if (deviceToken) {
+      await this.deviceTokens.unregister(userId, deviceToken);
+    }
+
+    this.logger.log(`User ${userId} logged out`);
+
+    return { message: 'Logged out' };
+  }
+
+  /** Permanently deletes the account and everything owned by it (profile,
+   *  posts, orders, businesses, etc. — cascades are defined on the schema).
+   *  `password` is required only if the account already has one set, mirroring
+   *  `changePassword`'s guard so an attacker holding a stolen but unexpired
+   *  token can't wipe the account without knowing the password. */
+  async deleteAccount(userId: string, password?: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
+
+    if (user.passwordHash) {
+      if (!password) {
+        throw new BadRequestException('Password is required to delete your account');
+      }
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        throw new UnauthorizedException('Incorrect password');
+      }
+    }
+
+    // Best-effort cleanup of push-notification endpoints before the cascade
+    // delete removes the DeviceToken rows out from under us.
+    const tokens = await this.prisma.deviceToken.findMany({
+      where: { userId },
+      select: { token: true },
+    });
+    await Promise.all(
+      tokens.map((t) =>
+        this.deviceTokens.unregister(userId, t.token).catch((err) =>
+          this.logger.warn(`Failed to unregister device token during account deletion: ${err}`),
+        ),
+      ),
+    );
+
+    await this.prisma.user.delete({ where: { id: userId } });
+
+    this.logger.log(`User ${userId} deleted their account`);
+
+    return { message: 'Your account has been permanently deleted' };
   }
 
   // ─── Forgot / Reset Password ──────────────────────────────────────────────────

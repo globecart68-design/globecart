@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -149,6 +150,21 @@ export class ChangePasswordDto {
   currentPassword?: string;
 }
 
+export class LogoutDto {
+  /** The push-notification token for *this* device, if any — lets the
+   *  server unregister it so notifications stop after logout. */
+  @IsOptional()
+  @IsString()
+  deviceToken?: string;
+}
+
+export class DeleteAccountDto {
+  /** Required only if the account already has a password set. */
+  @IsOptional()
+  @IsString()
+  password?: string;
+}
+
 export class ForgotPasswordDto extends IdentifierDto {}
 
 export class ResetPasswordDto extends IdentifierDto {
@@ -239,6 +255,37 @@ export class AuthController {
       dto.newPassword,
       dto.currentPassword,
     );
+  }
+
+  /**
+   * POST /auth/logout
+   * Stateless JWT, so there's nothing to revoke server-side — the client
+   * drops its stored token. If a device push-token is supplied it gets
+   * unregistered so this device stops receiving notifications.
+   */
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: LogoutDto,
+  ) {
+    return this.auth.logout(user.id, dto.deviceToken);
+  }
+
+  /**
+   * DELETE /auth/account
+   * Permanently deletes the authenticated user's account and everything
+   * owned by it. Requires the account password when one is set.
+   */
+  @Delete('account')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    return this.auth.deleteAccount(user.id, dto.password);
   }
 
   /**

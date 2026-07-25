@@ -15,6 +15,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { ProfileModule } from '../personal-users/profile/profile.module';
 import { RolesModule } from '../roles/roles.module';
 import { BusinessOnboardingModule } from '../onboarding/business/business-onboarding.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BusinessOnboardingModule } from '../onboarding/business/business-onboar
     ProfileModule,
     RolesModule,          // ← role management
     BusinessOnboardingModule,   // ← auto-create default shop on sign-up
+    NotificationModule,   // ← device-token cleanup on logout / account deletion
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
